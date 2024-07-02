@@ -2,6 +2,7 @@ import numpy as np
 from scipy.linalg import cholesky
 import matplotlib.pyplot as plt
 from mpl_toolkits.mplot3d import Axes3D
+import time
 def Log(x, y):
     """
     Logarithm map on the n-sphere.
@@ -65,29 +66,22 @@ def Exp(x, v):
 
 def sigma_points(mean, cov, kappa):
     n = mean.shape[0]
-    sigma_points = np.zeros((2 * n + 1, n))
-    sigma_points[0] = mean
-    
-    sqrt_cov = cholesky((n + kappa) * cov, lower=True)
+    sigma_pts = np.zeros((2 * n + 1, n))
+    sigma_pts[0] = mean
+    U = np.linalg.cholesky((n + kappa) * cov)
     for i in range(n):
-        sigma_points[i + 1] = mean + sqrt_cov[:, i]
-        sigma_points[n + i + 1] = mean - sqrt_cov[:, i]
-    
-    return sigma_points
+        sigma_pts[i + 1] = mean + U[i]
+        sigma_pts[n + i + 1] = mean - U[i]
+    return sigma_pts
 
-def unscented_transform(sigma_points, weights_mean, weights_cov, mean):
-    n = sigma_points.shape[1]
-    mean_out = np.zeros(n)
-    cov_out = np.zeros((n, n))
-
-    for i in range(sigma_points.shape[0]):
-        mean_out += weights_mean[i] * Exp(mean, sigma_points[i] - mean)
-    
-    for i in range(sigma_points.shape[0]):
-        diff = Log(mean_out, sigma_points[i])
-        cov_out += weights_cov[i] * np.outer(diff, diff)
-    
-    return mean_out, cov_out
+def unscented_transform(sigma_pts, weights_mean, weights_cov, mean):
+    n = sigma_pts.shape[1]
+    mean_pred = np.sum(weights_mean[:, None] * sigma_pts, axis=0)
+    cov_pred = np.zeros((n, n))
+    for i in range(2 * n + 1):
+        diff = sigma_pts[i] - mean_pred
+        cov_pred += weights_cov[i] * np.outer(diff, diff)
+    return mean_pred, cov_pred
 
 def ukf_predict(mean, cov, process_model, process_noise_cov, kappa, gamma_state):
     n = mean.shape[0]
@@ -133,6 +127,19 @@ def ukf_update(mean_pred, cov_pred, observation, observation_model, obs_noise_co
     
     return mean_upd, cov_upd
 
+def ukf(mean, cov, observations, process_model, observation_model, process_noise_cov, obs_noise_cov, kappa, gamma_state, gamma_obs):
+    n = mean.shape[0]
+    num_obs = len(observations)
+    filtered_means = np.zeros((num_obs, n))
+    filtered_covs = np.zeros((num_obs, n, n))
+    
+    for i in range(num_obs):
+        mean_pred, cov_pred = ukf_predict(mean, cov, process_model, process_noise_cov, kappa, gamma_state)
+        mean, cov = ukf_update(mean_pred, cov_pred, observations[i], observation_model, obs_noise_cov, kappa, gamma_obs)
+        filtered_means[i] = mean
+        filtered_covs[i] = cov
+    
+    return filtered_means, filtered_covs
 
 def tangent_noise(state, gamma_state):
     """
@@ -171,33 +178,15 @@ def observation_model(state, gamma_obs):
     noise = np.random.multivariate_normal(np.zeros_like(state), gamma_obs**2 * np.eye(len(state)))
     return state + noise
 
-# # Example usage
 
-# # Example usage with specific gamma values
-# gamma_state = 0.1
-# gamma_obs = 0.1
-# n = 3  # Dimensionality of the state space (n-sphere embedded in R^(n+1))
-# mean = np.array([1.0, 0.0, 0.0])
-# cov = np.eye(n) * 0.1
-# process_noise_cov = np.eye(n) * 0.01
-# obs_noise_cov = np.eye(n) * 0.1
-# observation = np.array([0.9, 0.1, 0.0])
-# kappa = 0
-
-# # Prediction step
-# mean_pred, cov_pred = ukf_predict(mean, cov, process_model, process_noise_cov, kappa, gamma_state)
-
-# # Update step
-# mean_upd, cov_upd = ukf_update(mean_pred, cov_pred, observation, observation_model, obs_noise_cov, kappa, gamma_obs)
-
-# print("Updated Mean:", mean_upd)
-# print("Updated Covariance:", cov_upd)
-
-def generate_synthetic_data(num_points, gamma_state, gamma_obs):
+def generate_synthetic_data(num_points, gamma_state, gamma_obs,dim=3):
     true_states = []
     observations = []
     
-    state = np.array([0.557, 0.557, -0.557])
+    # state = np.array([0.557, 0.557, -0.557])
+    # Initialize state on the n-sphere (random point on unit sphere in `dim` dimensions)
+    state = np.random.randn(dim)
+    state /= np.linalg.norm(state)
     for _ in range(num_points):
         # noise = np.random.multivariate_normal(np.zeros_like(state), (gamma_state**2 / 3) * np.eye(len(state)))
         # state = Exp(state, noise)
@@ -237,13 +226,74 @@ def plot_synthetic_data(true_states, observations):
     plt.title('Fig. 3 Example of synthetic data\nTrue states and observations on the sphere')
     plt.show()
 
-# Parameters
-num_points = 50
-gamma_state = 0.5 / np.sqrt(3)
-gamma_obs = 0.1
 
-# Generate data
-true_states, observations = generate_synthetic_data(num_points, gamma_state, gamma_obs)
+def ukf(mean, cov, observations, process_model, observation_model, process_noise_cov, obs_noise_cov, kappa, gamma_state, gamma_obs):
+    n = mean.shape[0]
+    num_obs = len(observations)
+    filtered_means = np.zeros((num_obs, n))
+    filtered_covs = np.zeros((num_obs, n, n))
+    
+    for i in range(num_obs):
+        mean_pred, cov_pred = ukf_predict(mean, cov, process_model, process_noise_cov, kappa, gamma_state)
+        mean, cov = ukf_update(mean_pred, cov_pred, observations[i], observation_model, obs_noise_cov, kappa, gamma_obs)
+        filtered_means[i] = mean
+        filtered_covs[i] = cov
+    
+    return filtered_means, filtered_covs
 
-# Plot data
-plot_synthetic_data(true_states, observations)
+def evaluate_ukf(dimensions, num_points=1, kappa=3):
+    errors = []
+    times = []
+    
+    for dim in dimensions:
+        gamma_state = 0.5 / np.sqrt(dim)
+        gamma_obs = 0.1
+        process_noise_cov = (gamma_state**2 / dim) * np.eye(dim)
+        obs_noise_cov = (gamma_obs**2) * np.eye(dim)
+        
+        true_states, observations = generate_synthetic_data(num_points, gamma_state, gamma_obs, dim)
+        
+        # Initial state for UKF
+        mean = true_states[0]
+        cov = np.eye(dim) * 0.1
+        
+        start_time = time.time()
+        filtered_means, filtered_covs = ukf(mean, cov, observations, process_model, observation_model, process_noise_cov, obs_noise_cov, kappa, gamma_state, gamma_obs)
+        end_time = time.time()
+        
+        mse = np.mean(np.linalg.norm(filtered_means - true_states, axis=1)**2)
+        
+        errors.append(mse)
+        times.append(end_time - start_time)
+    
+    return np.array(errors), np.array(times)
+
+def plot_ukf_results(dimensions, errors, times):
+    fig, axs = plt.subplots(1, 2, figsize=(12, 6))
+
+    # Error plot
+    axs[0].plot(dimensions, errors, color='red', label='Riemannian UKF')
+    axs[0].set_xlabel('State Space Dimensionality')
+    axs[0].set_ylabel('Error')
+    axs[0].set_title('(a)')
+    axs[0].legend()
+
+    # Time plot
+    axs[1].plot(dimensions, times, color='red', label='Riemannian UKF')
+    axs[1].set_xlabel('State Space Dimensionality')
+    axs[1].set_ylabel('Running Time (sec)')
+    axs[1].set_yscale('log')
+    axs[1].set_title('(b)')
+    axs[1].legend()
+
+    plt.tight_layout()
+    plt.show()
+
+# Define the range of dimensions to test
+dimensions = np.arange(2, 202, 10)
+
+# Evaluate UKF for different dimensions
+errors, times = evaluate_ukf(dimensions)
+
+# Plot results
+plot_ukf_results(dimensions, errors, times)
