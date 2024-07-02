@@ -68,6 +68,7 @@ def sigma_points(mean, cov, kappa):
     n = mean.shape[0]
     sigma_pts = np.zeros((2 * n + 1, n))
     sigma_pts[0] = mean
+    # Eq.(12): sigma points calculation using Cholesky decomposition
     U = np.linalg.cholesky((n + kappa) * cov)
     for i in range(n):
         sigma_pts[i + 1] = mean + U[i]
@@ -75,58 +76,88 @@ def sigma_points(mean, cov, kappa):
     return sigma_pts
 
 def unscented_transform(sigma_pts, weights_mean, weights_cov, mean):
+    #TODO this may be wrong, because we need a log
+    #also lacking f(), I think this means, each unscented_transform have a specific format
+    # we can't just use one function to do all
+    #TODO There indeed have: unscented_transform_Pt,unscented_transform_Pyy,unscented_transform_Pxy
+    # you can write is as sigma weights_cov * A * B, and carefully choose A and B
+    # now A and B is wrong, such as no log and so on, you need to carefully check it 
     n = sigma_pts.shape[1]
+    # Eq.(13): mean prediction using weighted sum of sigma points
     mean_pred = np.sum(weights_mean[:, None] * sigma_pts, axis=0)
     cov_pred = np.zeros((n, n))
     for i in range(2 * n + 1):
         diff = sigma_pts[i] - mean_pred
+        # Eq.(14): covariance prediction using weighted outer product of differences
         cov_pred += weights_cov[i] * np.outer(diff, diff)
     return mean_pred, cov_pred
 
+# Use the Riemannian generalisation of the unscented transform to estimate the predicted state mean
 def ukf_predict(mean, cov, process_model, process_noise_cov, kappa, gamma_state):
     n = mean.shape[0]
+    # Generate sigma points
     sigma_pts = sigma_points(mean, cov, kappa)
     
     sigma_pts_prop = np.zeros_like(sigma_pts)
     for i in range(sigma_pts.shape[0]):
+        # Propagate each sigma point through the process model
         sigma_pts_prop[i] = process_model(sigma_pts[i], gamma_state)
     
+    # Eq.(15): calculate weights for mean
     weights_mean = np.full(2 * n + 1, 1 / (2 * (n + kappa)))
     weights_mean[0] = kappa / (n + kappa)
     weights_cov = weights_mean.copy()
     
+    # Predict mean and covariance
     mean_pred, cov_pred = unscented_transform(sigma_pts_prop, weights_mean, weights_cov, mean)
+    # Add process noise covariance
     cov_pred += process_noise_cov
     
     return mean_pred, cov_pred
 
+# step2:Compute the Riemannian generalisation of the unscented transform
+# step3:Compute state updates
 def ukf_update(mean_pred, cov_pred, observation, observation_model, obs_noise_cov, kappa, gamma_obs):
     n = mean_pred.shape[0]
+    # Generate sigma points
     sigma_pts = sigma_points(mean_pred, cov_pred, kappa)
     
     sigma_pts_obs = np.zeros((2 * n + 1, observation.shape[0]))
     for i in range(sigma_pts.shape[0]):
+        # Propagate each sigma point through the observation model
         sigma_pts_obs[i] = observation_model(sigma_pts[i], gamma_obs)
     
+    # Eq.(15): calculate weights for mean
     weights_mean = np.full(2 * n + 1, 1 / (2 * (n + kappa)))
     weights_mean[0] = kappa / (n + kappa)
     weights_cov = weights_mean.copy()
     
+    # Predict observation mean and covariance
+    #TODO 
+    #directly using unscented_transform may be wrong, because original format has Log, but here not
     mean_obs, cov_obs = unscented_transform(sigma_pts_obs, weights_mean, weights_cov, observation)
+    # Add observation noise covariance
     cov_obs += obs_noise_cov
     
     cross_cov = np.zeros((n, observation.shape[0]))
     for i in range(sigma_pts.shape[0]):
+        # Compute cross-covariance using the difference in state and observation space
         diff_state = Log(mean_pred, sigma_pts[i])
         diff_obs = Log(mean_obs, sigma_pts_obs[i])
         cross_cov += weights_cov[i] * np.outer(diff_state, diff_obs)
     
+    # Compute Kalman gain
+    # cov_obs = Pyy, cross_cov = Pxy
+    #below is step3
     kalman_gain = cross_cov @ np.linalg.inv(cov_obs)
-    mean_upd = Exp(mean_pred, kalman_gain @ Log(mean_obs, observation))
-    cov_upd = cov_pred - kalman_gain @ cov_obs @ kalman_gain.T
-    
-    return mean_upd, cov_upd
 
+    # Update covariance using the Kalman gain
+    cov_upd = cov_pred - kalman_gain @ cov_obs @ kalman_gain.T
+    # Update mean using the Kalman gain
+    #TODO
+    # below is step 4, but lacking of one core step
+    mean_upd = Exp(mean_pred, kalman_gain @ Log(mean_obs, observation))
+    return mean_upd, cov_upd
 def ukf(mean, cov, observations, process_model, observation_model, process_noise_cov, obs_noise_cov, kappa, gamma_state, gamma_obs):
     n = mean.shape[0]
     num_obs = len(observations)
