@@ -1,6 +1,7 @@
 import numpy as np
 from scipy.linalg import cholesky
-
+import matplotlib.pyplot as plt
+from mpl_toolkits.mplot3d import Axes3D
 def Log(x, y):
     """
     Logarithm map on the n-sphere.
@@ -132,14 +133,36 @@ def ukf_update(mean_pred, cov_pred, observation, observation_model, obs_noise_co
     
     return mean_upd, cov_upd
 
-# Example usage with specific gamma values
-gamma_state = 0.1
-gamma_obs = 0.1
+
+def tangent_noise(state, gamma_state):
+    """
+    Generate a noise vector in the tangent space of the sphere at the given state.
+    
+    Args:
+        state (ndarray): Base point on the n-sphere (n-dimensional).
+        gamma_state (float): Standard deviation of the Gaussian noise.
+    
+    Returns:
+        tangent_noise (ndarray): Noise vector in the tangent space at the given state.
+    """
+    noise = np.random.multivariate_normal(np.zeros_like(state), gamma_state**2 * np.eye(len(state)))
+    proj = np.dot(noise, state) * state
+    tangent_noise = noise - proj
+    return tangent_noise
 
 def process_model(state, gamma_state):
-    # Process model as described in the image
-    # Propagate the state using the exponential map with Gaussian noise
-    noise = np.random.multivariate_normal(np.zeros_like(state), gamma_state**2 * np.eye(len(state)))
+    """
+    Process model as described in the image.
+    Propagate the state using the exponential map with Gaussian noise.
+    
+    Args:
+        state (ndarray): Current state on the n-sphere (n-dimensional).
+        gamma_state (float): Standard deviation of the state noise.
+    
+    Returns:
+        new_state (ndarray): New state on the n-sphere.
+    """
+    noise = tangent_noise(state, gamma_state)
     return Exp(state, noise)
 
 def observation_model(state, gamma_obs):
@@ -148,20 +171,79 @@ def observation_model(state, gamma_obs):
     noise = np.random.multivariate_normal(np.zeros_like(state), gamma_obs**2 * np.eye(len(state)))
     return state + noise
 
-# Example usage
-n = 3  # Dimensionality of the state space (n-sphere embedded in R^(n+1))
-mean = np.array([1.0, 0.0, 0.0])
-cov = np.eye(n) * 0.1
-process_noise_cov = np.eye(n) * 0.01
-obs_noise_cov = np.eye(n) * 0.1
-observation = np.array([0.9, 0.1, 0.0])
-kappa = 0
+# # Example usage
 
-# Prediction step
-mean_pred, cov_pred = ukf_predict(mean, cov, process_model, process_noise_cov, kappa, gamma_state)
+# # Example usage with specific gamma values
+# gamma_state = 0.1
+# gamma_obs = 0.1
+# n = 3  # Dimensionality of the state space (n-sphere embedded in R^(n+1))
+# mean = np.array([1.0, 0.0, 0.0])
+# cov = np.eye(n) * 0.1
+# process_noise_cov = np.eye(n) * 0.01
+# obs_noise_cov = np.eye(n) * 0.1
+# observation = np.array([0.9, 0.1, 0.0])
+# kappa = 0
 
-# Update step
-mean_upd, cov_upd = ukf_update(mean_pred, cov_pred, observation, observation_model, obs_noise_cov, kappa, gamma_obs)
+# # Prediction step
+# mean_pred, cov_pred = ukf_predict(mean, cov, process_model, process_noise_cov, kappa, gamma_state)
 
-print("Updated Mean:", mean_upd)
-print("Updated Covariance:", cov_upd)
+# # Update step
+# mean_upd, cov_upd = ukf_update(mean_pred, cov_pred, observation, observation_model, obs_noise_cov, kappa, gamma_obs)
+
+# print("Updated Mean:", mean_upd)
+# print("Updated Covariance:", cov_upd)
+
+def generate_synthetic_data(num_points, gamma_state, gamma_obs):
+    true_states = []
+    observations = []
+    
+    state = np.array([0.557, 0.557, -0.557])
+    for _ in range(num_points):
+        # noise = np.random.multivariate_normal(np.zeros_like(state), (gamma_state**2 / 3) * np.eye(len(state)))
+        # state = Exp(state, noise)
+        state = process_model(state,gamma_state)
+        true_states.append(state)
+        
+        observation = observation_model(state, gamma_obs)
+        observations.append(observation)
+    
+    return np.array(true_states), np.array(observations)
+def plot_synthetic_data(true_states, observations):
+    fig = plt.figure()
+    ax = fig.add_subplot(111, projection='3d')
+    
+    # Sphere for reference
+    u = np.linspace(0, 2 * np.pi, 100)
+    v = np.linspace(0, np.pi, 100)
+    x = np.outer(np.cos(u), np.sin(v))
+    y = np.outer(np.sin(u), np.sin(v))
+    z = np.outer(np.ones(np.size(u)), np.cos(v))
+    ax.plot_wireframe(x, y, z, color='b', alpha=0.1)
+    
+    # Plot true states and connect them to show the trajectory
+    ax.scatter(true_states[:, 0], true_states[:, 1], true_states[:, 2], color='orange', label='True States')
+    ax.plot(true_states[:, 0], true_states[:, 1], true_states[:, 2], color='orange', linestyle='-', marker='o', markersize=2)
+    
+    # Plot observations and connect them to corresponding true states
+    ax.scatter(observations[:, 0], observations[:, 1], observations[:, 2], color='purple', marker='s', label='Observations')
+    for i in range(len(true_states)):
+        ax.plot([true_states[i, 0], observations[i, 0]], [true_states[i, 1], observations[i, 1]], [true_states[i, 2], observations[i, 2]], color='purple', linestyle='-')
+    
+    ax.set_xlabel('X')
+    ax.set_ylabel('Y')
+    ax.set_zlabel('Z')
+    ax.set_box_aspect([1,1,1])  # Set equal scaling for all axes
+    ax.legend(loc='upper right')
+    plt.title('Fig. 3 Example of synthetic data\nTrue states and observations on the sphere')
+    plt.show()
+
+# Parameters
+num_points = 50
+gamma_state = 0.5 / np.sqrt(3)
+gamma_obs = 0.1
+
+# Generate data
+true_states, observations = generate_synthetic_data(num_points, gamma_state, gamma_obs)
+
+# Plot data
+plot_synthetic_data(true_states, observations)
