@@ -78,7 +78,7 @@ def sigma_points(mean, cov, kappa):
 #sigma_pts =h(σ (m) M )or
 # this is used for step1, eq20 amd 21
 # for Pxx and Pxy, mean_pred is yt
-def unscented_transform(sigma_pts_L,sigma_pts_R,weights_mean, weights_cov, mean):
+def unscented_transform(sigma_pts_L,sigma_pts_R,weights_mean, weights_cov):
     n = sigma_pts_R.shape[1]
     # Eq.(13): mean prediction using weighted sum of sigma points
     mean_pred = np.sum(weights_mean[:, None] * sigma_pts_R, axis=0)
@@ -107,7 +107,7 @@ def ukf_predict(mean, cov, process_model, process_noise_cov, kappa, gamma_state)
     
     # Predict mean and covariance
     # this is eq20 and 21, sigma_pts is h(x), get e(fx), h(fx)
-    mean_pred, cov_pred = unscented_transform(sigma_pts_pro,sigma_pts_pro,weights_mean, weights_cov, mean)
+    mean_pred, cov_pred = unscented_transform(sigma_pts_pro,sigma_pts_pro,weights_mean, weights_cov)
     # Add process noise covariance
     cov_pred += process_noise_cov
     
@@ -115,7 +115,7 @@ def ukf_predict(mean, cov, process_model, process_noise_cov, kappa, gamma_state)
 
 # step2:Compute the Riemannian generalisation of the unscented transform
 # step3:Compute state updates
-def ukf_update(mean_pred, cov_pred, observation, observation_model, obs_noise_cov, kappa, gamma_obs):
+def ukf_update(mean_pred, cov_pred, observation, observation_model, obs_noise_cov, kappa, gamma_obs,gamma_state):
     n = mean_pred.shape[0]
     # Generate sigma points
     sigma_pts = sigma_points(mean_pred, cov_pred, kappa)
@@ -127,7 +127,7 @@ def ukf_update(mean_pred, cov_pred, observation, observation_model, obs_noise_co
     
     # step2: Predict observation mean and covariance
     #TODO they all use unscented_transform and use Pyy,Pxy rather than below name!
-    #eq 36, 37 and 31(h(sigma))
+    #eq 33,32 and 31(h(sigma))
     #you need verify mean_pred is sigma's corresponding value
     sigma_pts_obs = np.zeros((2 * n + 1, observation.shape[0]))
     for i in range(sigma_pts.shape[0]):
@@ -136,19 +136,22 @@ def ukf_update(mean_pred, cov_pred, observation, observation_model, obs_noise_co
     sigma_pts_pro = np.zeros_like(sigma_pts)
     for i in range(sigma_pts.shape[0]):
         sigma_pts_pro[i] = process_model(sigma_pts[i], gamma_state)
-        
+    _, Pyy = unscented_transform(sigma_pts_obs,sigma_pts_obs,weights_mean, weights_cov)
+    yt, Pxy = unscented_transform(sigma_pts_pro,sigma_pts_obs,weights_mean, weights_cov)
+
     #step2 END
     # Compute Kalman gain
     # cov_obs = Pyy, cross_cov = Pxy
-    #below is step3
-    kalman_gain = cross_cov @ np.linalg.inv(cov_obs)
+    #below is step3, 
+    mean_upd_tangent = 
+    kalman_gain = Pxy @ np.linalg.inv(Pyy)
 
     # Update covariance using the Kalman gain
-    cov_upd = cov_pred - kalman_gain @ cov_obs @ kalman_gain.T
+    cov_upd = cov_pred - kalman_gain @ Pyy @ kalman_gain.T
     # Update mean using the Kalman gain
     #TODO
     # below is step 4, but lacking of one core step
-    mean_upd = Exp(mean_pred, kalman_gain @ Log(mean_obs, observation))
+
     return mean_upd, cov_upd
 def ukf(mean, cov, observations, process_model, observation_model, process_noise_cov, obs_noise_cov, kappa, gamma_state, gamma_obs):
     n = mean.shape[0]
@@ -158,7 +161,7 @@ def ukf(mean, cov, observations, process_model, observation_model, process_noise
     
     for i in range(num_obs):
         mean_pred, cov_pred = ukf_predict(mean, cov, process_model, process_noise_cov, kappa, gamma_state)
-        mean, cov = ukf_update(mean_pred, cov_pred, observations[i], observation_model, obs_noise_cov, kappa, gamma_obs)
+        mean, cov = ukf_update(mean_pred, cov_pred, observations[i], observation_model, obs_noise_cov, kappa, gamma_obs,gamma_state)
         filtered_means[i] = mean
         filtered_covs[i] = cov
     
@@ -249,20 +252,6 @@ def plot_synthetic_data(true_states, observations):
     plt.title('Fig. 3 Example of synthetic data\nTrue states and observations on the sphere')
     plt.show()
 
-
-def ukf(mean, cov, observations, process_model, observation_model, process_noise_cov, obs_noise_cov, kappa, gamma_state, gamma_obs):
-    n = mean.shape[0]
-    num_obs = len(observations)
-    filtered_means = np.zeros((num_obs, n))
-    filtered_covs = np.zeros((num_obs, n, n))
-    
-    for i in range(num_obs):
-        mean_pred, cov_pred = ukf_predict(mean, cov, process_model, process_noise_cov, kappa, gamma_state)
-        mean, cov = ukf_update(mean_pred, cov_pred, observations[i], observation_model, obs_noise_cov, kappa, gamma_obs)
-        filtered_means[i] = mean
-        filtered_covs[i] = cov
-    
-    return filtered_means, filtered_covs
 
 def evaluate_ukf(dimensions, num_points=1, kappa=3):
     errors = []
