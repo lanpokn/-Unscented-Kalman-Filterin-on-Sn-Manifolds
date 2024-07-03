@@ -75,23 +75,21 @@ def sigma_points(mean, cov, kappa):
         sigma_pts[n + i + 1] = mean - U[i]
     return sigma_pts
 
-def unscented_transform(sigma_pts, weights_mean, weights_cov, mean):
-    #TODO this may be wrong, because we need a log
-    #also lacking f(), I think this means, each unscented_transform have a specific format
-    # we can't just use one function to do all
-    #TODO There indeed have: unscented_transform_Pt,unscented_transform_Pyy,unscented_transform_Pxy
-    # you can write is as sigma weights_cov * A * B, and carefully choose A and B
-    # now A and B is wrong, such as no log and so on, you need to carefully check it 
-    n = sigma_pts.shape[1]
+#sigma_pts =h(σ (m) M )or
+# this is used for step1, eq20 amd 21
+# for Pxx and Pxy, mean_pred is yt
+def unscented_transform(sigma_pts_L,sigma_pts_R,weights_mean, weights_cov, mean):
+    n = sigma_pts_R.shape[1]
     # Eq.(13): mean prediction using weighted sum of sigma points
-    mean_pred = np.sum(weights_mean[:, None] * sigma_pts, axis=0)
+    mean_pred = np.sum(weights_mean[:, None] * sigma_pts_R, axis=0)
     cov_pred = np.zeros((n, n))
     for i in range(2 * n + 1):
-        diff = sigma_pts[i] - mean_pred
+        diff_L = sigma_pts_L[i] - mean_pred
+        diff_R = sigma_pts_R[i] - mean_pred
         # Eq.(14): covariance prediction using weighted outer product of differences
-        cov_pred += weights_cov[i] * np.outer(diff, diff)
+        cov_pred += weights_cov[i] * np.outer(diff_L, diff_R)
     return mean_pred, cov_pred
-
+# sigma_pts = σ (m) M, h or f should be added later
 # Use the Riemannian generalisation of the unscented transform to estimate the predicted state mean
 def ukf_predict(mean, cov, process_model, process_noise_cov, kappa, gamma_state):
     n = mean.shape[0]
@@ -100,7 +98,6 @@ def ukf_predict(mean, cov, process_model, process_noise_cov, kappa, gamma_state)
     
     sigma_pts_prop = np.zeros_like(sigma_pts)
     for i in range(sigma_pts.shape[0]):
-        # Propagate each sigma point through the process model
         sigma_pts_prop[i] = process_model(sigma_pts[i], gamma_state)
     
     # Eq.(15): calculate weights for mean
@@ -109,7 +106,8 @@ def ukf_predict(mean, cov, process_model, process_noise_cov, kappa, gamma_state)
     weights_cov = weights_mean.copy()
     
     # Predict mean and covariance
-    mean_pred, cov_pred = unscented_transform(sigma_pts_prop, weights_mean, weights_cov, mean)
+    # this is eq20 and 21, sigma_pts is h(x), get e(fx), h(fx)
+    mean_pred, cov_pred = unscented_transform(sigma_pts_prop,sigma_pts_prop,weights_mean, weights_cov, mean)
     # Add process noise covariance
     cov_pred += process_noise_cov
     
@@ -132,20 +130,11 @@ def ukf_update(mean_pred, cov_pred, observation, observation_model, obs_noise_co
     weights_mean[0] = kappa / (n + kappa)
     weights_cov = weights_mean.copy()
     
-    # Predict observation mean and covariance
-    #TODO 
-    #directly using unscented_transform may be wrong, because original format has Log, but here not
-    mean_obs, cov_obs = unscented_transform(sigma_pts_obs, weights_mean, weights_cov, observation)
-    # Add observation noise covariance
-    cov_obs += obs_noise_cov
+    # step2: Predict observation mean and covariance
+    #TODO they all use unscented_transform and use Pyy,Pxy rather than below name!
+    #eq 36, 37 and 31(h(sigma))
     
-    cross_cov = np.zeros((n, observation.shape[0]))
-    for i in range(sigma_pts.shape[0]):
-        # Compute cross-covariance using the difference in state and observation space
-        diff_state = Log(mean_pred, sigma_pts[i])
-        diff_obs = Log(mean_obs, sigma_pts_obs[i])
-        cross_cov += weights_cov[i] * np.outer(diff_state, diff_obs)
-    
+    #step2 END
     # Compute Kalman gain
     # cov_obs = Pyy, cross_cov = Pxy
     #below is step3
