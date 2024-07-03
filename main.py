@@ -96,9 +96,9 @@ def ukf_predict(mean, cov, process_model, process_noise_cov, kappa, gamma_state)
     # Generate sigma points
     sigma_pts = sigma_points(mean, cov, kappa)
     
-    sigma_pts_prop = np.zeros_like(sigma_pts)
+    sigma_pts_pro = np.zeros_like(sigma_pts)
     for i in range(sigma_pts.shape[0]):
-        sigma_pts_prop[i] = process_model(sigma_pts[i], gamma_state)
+        sigma_pts_pro[i] = process_model(sigma_pts[i], gamma_state)
     
     # Eq.(15): calculate weights for mean
     weights_mean = np.full(2 * n + 1, 1 / (2 * (n + kappa)))
@@ -107,7 +107,7 @@ def ukf_predict(mean, cov, process_model, process_noise_cov, kappa, gamma_state)
     
     # Predict mean and covariance
     # this is eq20 and 21, sigma_pts is h(x), get e(fx), h(fx)
-    mean_pred, cov_pred = unscented_transform(sigma_pts_prop,sigma_pts_prop,weights_mean, weights_cov, mean)
+    mean_pred, cov_pred = unscented_transform(sigma_pts_pro,sigma_pts_pro,weights_mean, weights_cov, mean)
     # Add process noise covariance
     cov_pred += process_noise_cov
     
@@ -120,11 +120,6 @@ def ukf_update(mean_pred, cov_pred, observation, observation_model, obs_noise_co
     # Generate sigma points
     sigma_pts = sigma_points(mean_pred, cov_pred, kappa)
     
-    sigma_pts_obs = np.zeros((2 * n + 1, observation.shape[0]))
-    for i in range(sigma_pts.shape[0]):
-        # Propagate each sigma point through the observation model
-        sigma_pts_obs[i] = observation_model(sigma_pts[i], gamma_obs)
-    
     # Eq.(15): calculate weights for mean
     weights_mean = np.full(2 * n + 1, 1 / (2 * (n + kappa)))
     weights_mean[0] = kappa / (n + kappa)
@@ -133,7 +128,15 @@ def ukf_update(mean_pred, cov_pred, observation, observation_model, obs_noise_co
     # step2: Predict observation mean and covariance
     #TODO they all use unscented_transform and use Pyy,Pxy rather than below name!
     #eq 36, 37 and 31(h(sigma))
-    
+    #you need verify mean_pred is sigma's corresponding value
+    sigma_pts_obs = np.zeros((2 * n + 1, observation.shape[0]))
+    for i in range(sigma_pts.shape[0]):
+        # Propagate each sigma point through the observation model
+        sigma_pts_obs[i] = observation_model(sigma_pts[i], gamma_obs)
+    sigma_pts_pro = np.zeros_like(sigma_pts)
+    for i in range(sigma_pts.shape[0]):
+        sigma_pts_pro[i] = process_model(sigma_pts[i], gamma_state)
+        
     #step2 END
     # Compute Kalman gain
     # cov_obs = Pyy, cross_cov = Pxy
