@@ -229,6 +229,8 @@ def ukf(mean, cov, observations, process_model, observation_model, process_noise
         #based on x_t-1 to predict xt, no observation here
         mean_pred, cov_pred = ukf_predict(mean, cov, process_model, process_noise_cov, kappa, gamma_state)
         Pxy,Pyy,yt_hat = ukf_CovCompute(mean,cov,kappa,gamma_obs,gamma_state)
+        # Pxy,Pyy,yt_hat = ukf_CovCompute(mean_pred,cov_pred,kappa,gamma_obs,gamma_state)
+
         #add an observation here and get new x 
         mean, cov = ukf_update(mean_pred, cov_pred, observations[i], yt_hat, Pxy,Pyy)
         filtered_means[i] = mean
@@ -322,7 +324,7 @@ def plot_synthetic_data(true_states, observations):
     plt.show()
 
 
-def evaluate_ukf(dimensions, num_points=10, kappa=3):
+def evaluate_ukf(dimensions, num_points=1, kappa=3):
     errors = []
     times = []
     
@@ -371,7 +373,7 @@ def plot_ukf_results(dimensions, errors, times):
     plt.show()
 
 # Define the range of dimensions to test
-dimensions = np.arange(2, 202, 100)
+dimensions = np.arange(2, 202, 50)
 
 # Evaluate UKF for different dimensions
 errors, times = evaluate_ukf(dimensions)
