@@ -73,6 +73,10 @@ def Log(x, y):
     return v
 x = [1,0]
 v = [1,1]
+x = np.asarray(x)
+v = np.asarray(v)
+v = v- np.dot(x,v)*x+x
+print( v)
 print(Exp(x,v))
 print(Log(x,Exp(x,v)))
 x = [1,0]
@@ -91,4 +95,8 @@ x = [0.707,0.707]
 v = [0,1.414]
 print(Exp(x,v))
 print(Log(x,Exp(x,v)))
+x = np.asarray(x)
+v = np.asarray(v)
+v = v- np.dot(x,v)*x+x
+print( v)
 #经过测试，该exp需要的正切空间，实际是要求以x为原点

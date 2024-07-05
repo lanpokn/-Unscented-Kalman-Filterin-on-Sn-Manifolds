@@ -98,17 +98,17 @@ def Exp(x, v):
     return y
 
 def sigma_points(mean, cov, kappa):
+    #ensure sigma_points is in tangent space
     def sigma_points_projection(sigma_pts, mean):
         # Compute the dimension n
         n = mean.shape[0]
         # Initialize the projected sigma points
         projected_sigma_pts = np.zeros_like(sigma_pts)
         for i in range(sigma_pts.shape[0]):
-            diff = sigma_pts[i] - mean
             # Project diff onto the tangent plane of mean
             # Assuming tangent plane is orthogonal to mean
-            projection = diff - np.dot(diff, mean) / np.dot(mean, mean) * mean
-            projected_sigma_pts[i] = mean + projection
+            # v = v- np.dot(x,v)*x
+            projected_sigma_pts[i] = sigma_pts[i]-np.dot(mean,sigma_pts[i])*mean +mean
         return projected_sigma_pts
     n = mean.shape[0]
     sigma_pts = np.zeros((2 * n + 1, n))
@@ -118,9 +118,9 @@ def sigma_points(mean, cov, kappa):
     for i in range(n):
         sigma_pts[i + 1] = mean + U[i]
         sigma_pts[n + i + 1] = mean - U[i]
-    return sigma_pts
-    # projected_sigma_pts = sigma_points_projection(sigma_pts, mean)
-    # return projected_sigma_pts
+    # return sigma_pts
+    projected_sigma_pts = sigma_points_projection(sigma_pts, mean)
+    return projected_sigma_pts
 
 
 
@@ -263,10 +263,13 @@ def ukf_update(mean_pred, cov_pred, observation, yt_hat, Pxy,Pyy):
     dim = mean_pred.shape[0]
     Pxy = np.eye(dim) * 0.1
     # Pxy = np.ones((dim-1, dim))*0.1
-    Pyy = np.eye(dim) * 0.1
+    Pyy = np.eye(dim) * 100
     cov_pred = np.eye(dim)
     #Debug
     kalman_gain = Pxy @ np.linalg.inv(Pyy)
+    # kalman_gain = np.eye(dim) * 0.01
+
+
     mean_upd_tangent = mean_pred+kalman_gain@Log(yt_hat,observation)
     # Update covariance using the Kalman gain
     #TODO below Pyy,Pxy,cov_pred is positive, but cov_upd is not
@@ -293,8 +296,12 @@ def ukf(mean, cov, observations, process_model, observation_model, process_noise
 
         #add an observation here and get new x 
         mean, cov = ukf_update(mean_pred, cov_pred, observations[i], yt_hat, Pxy,Pyy)
+
+
         filtered_means[i] = mean
         filtered_covs[i] = cov
+        # filtered_means[i] = observations[i]
+        # filtered_covs[i] = cov_pred
     
     return filtered_means, filtered_covs
 
@@ -344,7 +351,13 @@ def generate_synthetic_data(num_points, gamma_state, gamma_obs,dim=3):
     # Initialize state on the n-sphere (random point on unit sphere in `dim` dimensions)
     state = np.random.randn(dim)
     state /= np.linalg.norm(state)
-    for _ in range(num_points):
+
+    state[0] = 1.0
+    state[1:] = 0.0
+    true_states.append(state)
+    observation = observation_model(state, gamma_obs)
+    observations.append(observation)
+    for _ in range(num_points-1):
         # noise = np.random.multivariate_normal(np.zeros_like(state), (gamma_state**2 / 3) * np.eye(len(state)))
         # state = Exp(state, noise)
         state = process_model(state,gamma_state)
@@ -384,12 +397,14 @@ def plot_synthetic_data(true_states, observations):
     plt.show()
 
 
-def evaluate_ukf(dimensions, num_points=3, kappa=3):
+def evaluate_ukf(dimensions, num_points=1, kappa=3):
     errors = []
     times = []
     
     for dim in dimensions:
-        gamma_state = 0.5 / np.sqrt(dim)
+        # gamma_state = 0.5 / np.sqrt(dim) 
+        # gamma_obs = 0.1
+        gamma_state = 0.2
         gamma_obs = 0.1
         process_noise_cov = (gamma_state**2 / dim) * np.eye(dim)
         obs_noise_cov = (gamma_obs**2) * np.eye(dim)
@@ -400,7 +415,8 @@ def evaluate_ukf(dimensions, num_points=3, kappa=3):
         mean = true_states[0]
 
         cov = np.eye(dim) * 1
-        
+        cov[0, 0] = 0.00000001
+
         start_time = time.time()
         filtered_means, filtered_covs = ukf(mean, cov, observations, process_model, observation_model, process_noise_cov, obs_noise_cov, kappa, gamma_state, gamma_obs)
         end_time = time.time()
@@ -434,7 +450,7 @@ def plot_ukf_results(dimensions, errors, times):
     plt.show()
 
 # Define the range of dimensions to test
-dimensions = np.arange(2, 202, 25)
+dimensions = np.arange(2, 202, 10)
 
 # Evaluate UKF for different dimensions
 errors, times = evaluate_ukf(dimensions)
