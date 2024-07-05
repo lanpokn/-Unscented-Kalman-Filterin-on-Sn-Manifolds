@@ -74,14 +74,29 @@ def sigma_points(mean, cov, kappa):
         sigma_pts[i + 1] = mean + U[i]
         sigma_pts[n + i + 1] = mean - U[i]
     return sigma_pts
+def unscented_transform_M(sigma_pts_L,sigma_pts_R,weights_mean, weights_cov):
+    # Choose an initial point for the mean calculation
+    mean = sigma_pts_L[0]
 
+    # Compute the mean on the spherical manifold using the log and exp maps
+    tangent_vectors = np.array([Log(mean, pt) for pt in sigma_pts_L])
+    weighted_tangent_mean = np.sum(weights_mean[:, np.newaxis] * tangent_vectors, axis=0)
+    mean = Exp(mean, weighted_tangent_mean)
+
+    # Compute the covariance on the spherical manifold
+    cov = np.zeros((sigma_pts_L.shape[1], sigma_pts_L.shape[1]))
+    for m in range(len(sigma_pts_L)):
+        log_map = Log(mean, sigma_pts_L[m])
+        cov += weights_cov[m] * np.outer(log_map, log_map)
+
+    return mean, cov
 #sigma_pts =h(σ (m) M )or
 # this is used for step1, eq20 amd 21
 # for Pxx and Pxy, mean_pred is yt
 def unscented_transform(sigma_pts_L,sigma_pts_R,weights_mean, weights_cov):
     n = sigma_pts_R.shape[1]
     # Eq.(13): mean prediction using weighted sum of sigma points
-    mean_pred = np.average(sigma_pts_R, axis=0)
+    mean_pred = np.sum(sigma_pts_L*weights_mean, axis=0)
     cov_pred = np.zeros((n, n))
     for i in range(2 * n + 1):
         diff_L = sigma_pts_L[i] - mean_pred
@@ -92,7 +107,7 @@ def unscented_transform(sigma_pts_L,sigma_pts_R,weights_mean, weights_cov):
 def unscented_transform_xy(sigma_pts_L,sigma_pts_R,weights_mean, weights_cov):
     n = sigma_pts_R.shape[1]
     # Eq.(13): mean prediction using weighted sum of sigma points
-    mean_pred = np.average(sigma_pts_R, axis=0)
+    mean_pred = np.sum(sigma_pts_R*weights_mean, axis=0)
     cov_pred = np.zeros((n, n))
     for i in range(2 * n + 1):
         diff_L = sigma_pts_L[i]
@@ -106,10 +121,11 @@ def ukf_predict(mean, cov, process_model, process_noise_cov, kappa, gamma_state)
     n = mean.shape[0]
     # Generate sigma points
     sigma_pts = sigma_points(mean, cov, kappa)
-    
-    sigma_pts_pro = np.zeros_like(sigma_pts)
+    sigma_pts_M = np.array([Exp(mean, pt) for pt in sigma_pts])
+
+    sigma_pts_pro_M = np.zeros_like(sigma_pts)
     for i in range(sigma_pts.shape[0]):
-        sigma_pts_pro[i] = process_model(sigma_pts[i], gamma_state)
+        sigma_pts_pro_M[i] = process_model(sigma_pts_M[i], gamma_state)
     
     # Eq.(15): calculate weights for mean
     weights_mean = np.full(2 * n + 1, 1 / (2 * (n + kappa)))
@@ -118,7 +134,7 @@ def ukf_predict(mean, cov, process_model, process_noise_cov, kappa, gamma_state)
     
     # Predict mean and covariance
     # this is eq20 and 21, sigma_pts is h(x), get e(fx), h(fx)
-    mean_pred, cov_pred = unscented_transform(sigma_pts_pro,sigma_pts_pro,weights_mean, weights_cov)
+    mean_pred, cov_pred = unscented_transform_M(sigma_pts_pro_M,sigma_pts_pro_M,weights_mean, weights_cov)
     # Add process noise covariance
     # cov_pred += process_noise_cov*100
     
@@ -154,6 +170,7 @@ def ukf_CovCompute(mean,cov,kappa,gamma_obs,gamma_state):
     n = mean.shape[0]
     # Generate sigma points
     sigma_pts = sigma_points(mean, cov, kappa)
+    sigma_pts_M = np.array([Exp(mean, pt) for pt in sigma_pts])
     
     # Eq.(15): calculate weights for mean
     weights_mean = np.full(2 * n + 1, 1 / (2 * (n + kappa)))
@@ -164,16 +181,16 @@ def ukf_CovCompute(mean,cov,kappa,gamma_obs,gamma_state):
     #TODO they all use unscented_transform and use Pyy,Pxy rather than below name!
     #eq 33,32 and 31(h(sigma))
     #you need verify mean_pred is sigma's corresponding value
-    sigma_pts_obs = np.zeros((2 * n + 1, mean.shape[0]))
+    # sigma_pts_obs = np.zeros((2 * n + 1, mean.shape[0]))
+    sigma_pts_obs_M = np.zeros((2 * n + 1, mean.shape[0]))
+
     for i in range(sigma_pts.shape[0]):
         # Propagate each sigma point through the observation model
-        sigma_pts_obs[i] = observation_model(sigma_pts[i], gamma_obs)
-    sigma_pts_pro = np.zeros_like(sigma_pts)
-    for i in range(sigma_pts.shape[0]):
-        sigma_pts_pro[i] = process_model(sigma_pts[i], gamma_state)
-    _, Pyy = unscented_transform(sigma_pts_obs,sigma_pts_obs,weights_mean, weights_cov)
-    _, Pxy = unscented_transform_xy(sigma_pts,sigma_pts_obs,weights_mean, weights_cov)
-    yt_hat = np.average(sigma_pts_obs)
+        # sigma_pts_obs[i] = observation_model(sigma_pts[i], gamma_obs)
+        sigma_pts_obs_M = observation_model(sigma_pts_M[i], gamma_obs)
+    _, Pyy = unscented_transform(sigma_pts_obs_M,sigma_pts_obs_M,weights_mean, weights_cov)
+    _, Pxy = unscented_transform_xy(sigma_pts,sigma_pts_obs_M,weights_mean, weights_cov)
+    yt_hat = np.sum(sigma_pts_obs_M*weights_mean)
 
     return Pxy, Pyy,yt_hat
 # step2:Compute the Riemannian generalisation of the unscented transform
