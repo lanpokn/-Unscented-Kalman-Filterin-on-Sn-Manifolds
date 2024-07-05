@@ -33,11 +33,14 @@ def Log(x, y):
     # Compute the logarithm map
     if u_norm > 0:
         v = np.arccos(inner_product) * (u / u_norm)
+        # add this to turn back to global representation
+        v=v+x
+        #you need add 
     else:
         v = np.zeros_like(x)  # This handles the case where x == y
+        v = v+x
     
     return v
-
 # def Exp(x, v):
 #     """
 #     Exponential map on the n-sphere.
@@ -249,10 +252,19 @@ def ukf_CovCompute(mean,cov,kappa,gamma_obs,gamma_state):
 # step3:Compute state updates
 #observation is yt(true)
 def ukf_update(mean_pred, cov_pred, observation, yt_hat, Pxy,Pyy):
-    #Debug, cov is fixed
+    #Debug, suppose x is dim-1
+    # dim = mean_pred.shape[0]
+    # # Pxy = np.eye(dim) * 0.1
+    # Pxy = np.ones((dim-1, dim))*0.1
+    # Pyy = np.eye(dim) * 0.1
+    # cov_pred = np.eye(dim-1)
+
+    #suppose x is dim
     dim = mean_pred.shape[0]
     Pxy = np.eye(dim) * 0.1
+    # Pxy = np.ones((dim-1, dim))*0.1
     Pyy = np.eye(dim) * 0.1
+    cov_pred = np.eye(dim)
     #Debug
     kalman_gain = Pxy @ np.linalg.inv(Pyy)
     mean_upd_tangent = mean_pred+kalman_gain@Log(yt_hat,observation)
@@ -263,7 +275,7 @@ def ukf_update(mean_pred, cov_pred, observation, yt_hat, Pxy,Pyy):
     # Update mean using the Kalman gain
     mean_upd = Exp(mean_pred,mean_upd_tangent)
     #TODO I'm not sure what this step is doing....
-    cov_upd =  parallel_transport(cov_upd, lambda t: mean_upd, 1.0)  # Assuming alpha(t) = mean_upd, t = 1.0
+    # cov_upd =  parallel_transport(cov_upd, lambda t: mean_upd, 1.0)  # Assuming alpha(t) = mean_upd, t = 1.0
     return mean_upd, cov_upd
 def ukf(mean, cov, observations, process_model, observation_model, process_noise_cov, obs_noise_cov, kappa, gamma_state, gamma_obs):
     n = mean.shape[0]
@@ -372,7 +384,7 @@ def plot_synthetic_data(true_states, observations):
     plt.show()
 
 
-def evaluate_ukf(dimensions, num_points=1, kappa=3):
+def evaluate_ukf(dimensions, num_points=3, kappa=3):
     errors = []
     times = []
     
@@ -422,7 +434,7 @@ def plot_ukf_results(dimensions, errors, times):
     plt.show()
 
 # Define the range of dimensions to test
-dimensions = np.arange(2, 202, 10)
+dimensions = np.arange(2, 202, 25)
 
 # Evaluate UKF for different dimensions
 errors, times = evaluate_ukf(dimensions)
