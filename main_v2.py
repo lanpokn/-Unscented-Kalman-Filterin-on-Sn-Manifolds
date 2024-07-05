@@ -293,18 +293,20 @@ def ukf(mean, cov, observations, process_model, observation_model, process_noise
         #based on x_t-1 to predict xt, no observation here
         mean_pred, cov_pred = ukf_predict(mean, cov, process_model, process_noise_cov, kappa, gamma_state)
         # Pxy,Pyy,yt_hat = ukf_CovCompute(mean,cov,kappa,gamma_obs,gamma_state)
-        Pxy,Pyy,yt_hat = ukf_CovCompute(mean_pred,cov_pred,kappa,gamma_obs,gamma_state)
+        # Pxy,Pyy,yt_hat = ukf_CovCompute(mean_pred,cov_pred,kappa,gamma_obs,gamma_state)
 
-        # #add an observation here and get new x 
-        mean, cov = ukf_update(mean_pred, cov_pred, observations[i], yt_hat, Pxy,Pyy)
+        # # #add an observation here and get new x 
+        # mean, cov = ukf_update(mean_pred, cov_pred, observations[i], yt_hat, Pxy,Pyy)
 
 
-        filtered_means[i] = mean
-        filtered_covs[i] = cov
+        # filtered_means[i] = mean
+        # filtered_covs[i] = cov
+        # filtered_means[i] = mean_pred
+        # filtered_covs[i] = cov_pred
         # filtered_means[i] = yt_hat
         # filtered_covs[i] = cov_pred
-        # filtered_means[i] = process_model(mean,gamma_state)
-        # filtered_covs[i] = cov_pred
+        filtered_means[i] = process_model(mean,gamma_state)
+        filtered_covs[i] = cov_pred
         # filtered_means[i] = observations[i]
         # filtered_covs[i] = cov_pred
     
@@ -411,7 +413,7 @@ def evaluate_ukf(dimensions, num_points=1, kappa=3):
         # gamma_obs = 0.1
         gamma_state = 0.2
         gamma_obs = 0.1
-        process_noise_cov = (gamma_state**2 / dim) * np.eye(dim)
+        process_noise_cov = (gamma_state**2) * np.eye(dim)
         obs_noise_cov = (gamma_obs**2) * np.eye(dim)
         
         true_states, observations = generate_synthetic_data(num_points, gamma_state, gamma_obs, dim)
@@ -419,8 +421,8 @@ def evaluate_ukf(dimensions, num_points=1, kappa=3):
         # Initial state for UKF
         mean = true_states[0]
 
-        cov = np.eye(dim) * 1
-        cov[0, 0] = 0.00000001
+        cov = np.eye(dim) * 0.0000001
+        cov[0, 0] = 0.0000000000000000000001
 
         start_time = time.time()
         filtered_means, filtered_covs = ukf(mean, cov, observations, process_model, observation_model, process_noise_cov, obs_noise_cov, kappa, gamma_state, gamma_obs)
