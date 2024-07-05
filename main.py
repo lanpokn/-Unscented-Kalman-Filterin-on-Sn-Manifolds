@@ -38,6 +38,32 @@ def Log(x, y):
     
     return v
 
+# def Exp(x, v):
+#     """
+#     Exponential map on the n-sphere.
+    
+#     Args:
+#         x (ndarray): Base point on the n-sphere (n-dimensional).
+#         v (ndarray): Tangent vector at x.
+    
+#     Returns:
+#         y (ndarray): Point on the n-sphere.
+#     """
+#     # Ensure the input vectors are numpy arrays
+#     v = v- np.dot()
+#     x = np.asarray(x)
+#     v = np.asarray(v)
+    
+#     # Compute the norm of the tangent vector v
+#     v_norm = np.linalg.norm(v)
+    
+#     # Compute the exponential map
+#     if v_norm > 0:
+#         y = np.cos(v_norm) * x + np.sin(v_norm) * (v / v_norm)
+#     else:
+#         y = x  # This handles the case where v is zero
+    
+#     return y
 def Exp(x, v):
     """
     Exponential map on the n-sphere.
@@ -49,10 +75,14 @@ def Exp(x, v):
     Returns:
         y (ndarray): Point on the n-sphere.
     """
+
     # Ensure the input vectors are numpy arrays
     x = np.asarray(x)
     v = np.asarray(v)
-    
+    #ensure x is on the circle
+    x = x/np.linalg.norm(x)
+    #ensure v is in tangent space
+    v = v- np.dot(x,v)*x
     # Compute the norm of the tangent vector v
     v_norm = np.linalg.norm(v)
     
@@ -65,6 +95,18 @@ def Exp(x, v):
     return y
 
 def sigma_points(mean, cov, kappa):
+    def sigma_points_projection(sigma_pts, mean):
+        # Compute the dimension n
+        n = mean.shape[0]
+        # Initialize the projected sigma points
+        projected_sigma_pts = np.zeros_like(sigma_pts)
+        for i in range(sigma_pts.shape[0]):
+            diff = sigma_pts[i] - mean
+            # Project diff onto the tangent plane of mean
+            # Assuming tangent plane is orthogonal to mean
+            projection = diff - np.dot(diff, mean) / np.dot(mean, mean) * mean
+            projected_sigma_pts[i] = mean + projection
+        return projected_sigma_pts
     n = mean.shape[0]
     sigma_pts = np.zeros((2 * n + 1, n))
     sigma_pts[0] = mean
@@ -74,25 +116,31 @@ def sigma_points(mean, cov, kappa):
         sigma_pts[i + 1] = mean + U[i]
         sigma_pts[n + i + 1] = mean - U[i]
     return sigma_pts
+    # projected_sigma_pts = sigma_points_projection(sigma_pts, mean)
+    # return projected_sigma_pts
+
+
+
+
 def unscented_transform_M(sigma_pts_L,sigma_pts_R,weights_mean, weights_cov):
     # Choose an initial point for the mean calculation
     #TODO, this is wrong , becaused mean is not on the manifold
-    # mean = sigma_pts_L[0]
+    mean = sigma_pts_L[0]
 
-    # # Compute the mean on the spherical manifold using the log and exp maps
-    # tangent_vectors = np.array([Log(mean, pt) for pt in sigma_pts_L])
-    # weighted_tangent_mean = np.sum(weights_mean[:, np.newaxis] * tangent_vectors, axis=0)
-    # mean = Exp(mean, weighted_tangent_mean)
+    # Compute the mean on the spherical manifold using the log and exp maps
+    tangent_vectors = np.array([Log(mean, pt) for pt in sigma_pts_L])
+    weighted_tangent_mean = np.sum(weights_mean[:, np.newaxis] * tangent_vectors, axis=0)
+    mean = Exp(mean, weighted_tangent_mean)
 
-    # # Compute the covariance on the spherical manifold
-    # cov = np.zeros((sigma_pts_L.shape[1], sigma_pts_L.shape[1]))
-    # for m in range(len(sigma_pts_L)):
-    #     log_map = Log(mean, sigma_pts_L[m])
-    #     cov += weights_cov[m] * np.outer(log_map, log_map)
+    # Compute the covariance on the spherical manifold
+    cov = np.zeros((sigma_pts_L.shape[1], sigma_pts_L.shape[1]))
+    for m in range(len(sigma_pts_L)):
+        log_map = Log(mean, sigma_pts_L[m])
+        cov += weights_cov[m] * np.outer(log_map, log_map)
 
-    # return mean, cov
-    #only used for debug:
-    return sigma_pts_L[0], np.ones((sigma_pts_L.shape[1], sigma_pts_L.shape[1]))
+    return mean, cov
+    # #only used for debug:
+    # return sigma_pts_L[0], np.ones((sigma_pts_L.shape[1], sigma_pts_L.shape[1]))
 #sigma_pts =h(σ (m) M )or
 # this is used for step1, eq20 amd 21
 # for Pxx and Pxy, mean_pred is yt
@@ -194,13 +242,18 @@ def ukf_CovCompute(mean,cov,kappa,gamma_obs,gamma_state):
         sigma_pts_obs_M[i] = observation_model(sigma_pts_M[i], gamma_obs)
     _, Pyy = unscented_transform(sigma_pts_obs_M,sigma_pts_obs_M,weights_mean, weights_cov)
     _, Pxy = unscented_transform_xy(sigma_pts,sigma_pts_obs_M,weights_mean, weights_cov)
-    yt_hat = np.sum(sigma_pts_obs_M*weights_mean[:, np.newaxis] )
+    yt_hat = np.sum(sigma_pts_obs_M*weights_mean[:, np.newaxis], axis=0)
 
     return Pxy, Pyy,yt_hat
 # step2:Compute the Riemannian generalisation of the unscented transform
 # step3:Compute state updates
 #observation is yt(true)
 def ukf_update(mean_pred, cov_pred, observation, yt_hat, Pxy,Pyy):
+    #Debug, cov is fixed
+    dim = mean_pred.shape[0]
+    Pxy = np.eye(dim) * 0.1
+    Pyy = np.eye(dim) * 0.1
+    #Debug
     kalman_gain = Pxy @ np.linalg.inv(Pyy)
     mean_upd_tangent = mean_pred+kalman_gain@Log(yt_hat,observation)
     # Update covariance using the Kalman gain
@@ -319,7 +372,7 @@ def plot_synthetic_data(true_states, observations):
     plt.show()
 
 
-def evaluate_ukf(dimensions, num_points=10, kappa=3):
+def evaluate_ukf(dimensions, num_points=1, kappa=3):
     errors = []
     times = []
     
@@ -333,6 +386,7 @@ def evaluate_ukf(dimensions, num_points=10, kappa=3):
         
         # Initial state for UKF
         mean = true_states[0]
+
         cov = np.eye(dim) * 1
         
         start_time = time.time()
@@ -368,7 +422,7 @@ def plot_ukf_results(dimensions, errors, times):
     plt.show()
 
 # Define the range of dimensions to test
-dimensions = np.arange(2, 202, 50)
+dimensions = np.arange(2, 202, 10)
 
 # Evaluate UKF for different dimensions
 errors, times = evaluate_ukf(dimensions)
