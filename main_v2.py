@@ -41,32 +41,6 @@ def Log(x, y):
         v = v+x
     
     return v
-# def Exp(x, v):
-#     """
-#     Exponential map on the n-sphere.
-    
-#     Args:
-#         x (ndarray): Base point on the n-sphere (n-dimensional).
-#         v (ndarray): Tangent vector at x.
-    
-#     Returns:
-#         y (ndarray): Point on the n-sphere.
-#     """
-#     # Ensure the input vectors are numpy arrays
-#     v = v- np.dot()
-#     x = np.asarray(x)
-#     v = np.asarray(v)
-    
-#     # Compute the norm of the tangent vector v
-#     v_norm = np.linalg.norm(v)
-    
-#     # Compute the exponential map
-#     if v_norm > 0:
-#         y = np.cos(v_norm) * x + np.sin(v_norm) * (v / v_norm)
-#     else:
-#         y = x  # This handles the case where v is zero
-    
-#     return y
 def Exp(x, v):
     """
     Exponential map on the n-sphere.
@@ -346,7 +320,8 @@ def process_model(state, gamma_state):
     Returns:
         new_state (ndarray): New state on the n-sphere.
     """
-    noise = tangent_noise(state, gamma_state)
+    # noise = tangent_noise(state, gamma_state)
+    noise = np.random.multivariate_normal(np.zeros_like(state), gamma_state**2 * np.eye(len(state)))
     return Exp(state, noise)
 
 def observation_model(state, gamma_obs):
@@ -417,7 +392,10 @@ def evaluate_ukf(dimensions, num_points=1, kappa=3):
     for dim in dimensions:
         # gamma_state = 0.5 / np.sqrt(dim) 
         # gamma_obs = 0.1
-        gamma_state = 0.2/np.sqrt(dim) 
+        # gamma_state = 0.2
+        # gamma_obs = 0.1
+        # gamma_state = 0.5/np.sqrt(dim) 
+        gamma_state = 0.05
         gamma_obs = 0.1
         # gamma_state = 0
         # gamma_obs = 0
@@ -468,7 +446,7 @@ def plot_ukf_results(dimensions, errors, times):
     plt.show()
 
 # Define the range of dimensions to test
-dimensions = np.arange(10, 210, 20)
+dimensions = np.arange(10, 220, 10)
 
 # Evaluate UKF for different dimensions
 errors, times = evaluate_ukf(dimensions)
