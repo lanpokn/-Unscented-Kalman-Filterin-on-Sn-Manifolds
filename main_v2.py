@@ -115,7 +115,8 @@ def sigma_points(mean, cov, kappa):
     sigma_pts[0] = mean
     # Eq.(12): sigma points calculation using Cholesky decomposition
     # to avoid numerical error, we add a small I here
-    U = np.linalg.cholesky((n + kappa) * (cov+np.eye(n)*0.001))
+    #this I should be very small, or final value would be wrong!!!!!
+    U = np.linalg.cholesky((n + kappa) * (cov+np.eye(n)*0.000000001))
     for i in range(n):
         sigma_pts[i + 1] = mean + U[i]
         sigma_pts[n + i + 1] = mean - U[i]
@@ -140,7 +141,8 @@ def unscented_transform_M(sigma_pts_L,sigma_pts_R,weights_mean, weights_cov):
     cov = np.zeros((sigma_pts_L.shape[1], sigma_pts_L.shape[1]))
     for m in range(len(sigma_pts_L)):
         log_map = Log(mean, sigma_pts_L[m])
-        cov += weights_cov[m] * np.outer(log_map-mean, log_map-mean)
+        log_map_diff = (log_map-mean)
+        cov += weights_cov[m] * np.outer(log_map_diff, log_map_diff)
 
     return mean, cov
     # #only used for debug:
@@ -193,7 +195,7 @@ def ukf_predict(mean, cov, process_model, process_noise_cov, kappa, gamma_state)
     mean_pred, cov_pred = unscented_transform_M(sigma_pts_pro_M,sigma_pts_pro_M,weights_mean, weights_cov)
     # Add process noise covariance
     # cov_pred += process_noise_cov*100
-    
+     
     return mean_pred, cov_pred
 def parallel_transport(Mx, alpha, t):
     M = Mx.shape[0]
@@ -427,6 +429,7 @@ def evaluate_ukf(dimensions, num_points=1, kappa=3):
         # cov = np.eye(dim) * 0.0000001
         cov = np.eye(dim) * 0.001
         cov[0,0] = 0
+        cov[1,1] = 0.01
 
 
         start_time = time.time()
@@ -462,7 +465,7 @@ def plot_ukf_results(dimensions, errors, times):
     plt.show()
 
 # Define the range of dimensions to test
-dimensions = np.arange(10, 210, 25)
+dimensions = np.arange(3, 210, 25)
 
 # Evaluate UKF for different dimensions
 errors, times = evaluate_ukf(dimensions)
