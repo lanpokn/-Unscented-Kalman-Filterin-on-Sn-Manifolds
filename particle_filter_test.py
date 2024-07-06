@@ -129,14 +129,16 @@ def Particle_filter(mean, cov, observations, gamma_state, gamma_obs, M=10):
     return estimated_state
 
 # Example usage
-N=3
+N=200
 
-observations = np.array([1.01,0,0])  # Your observed data
+observations = [np.zeros(N)]  # Your observed data
+observations= np.asarray(observations)
+observations[0,0] = 1
 mean = np.zeros(N)  # Initial mean
 mean[0] = 1
 cov = np.eye(N)*0.01  # Initial covariance
 gamma_state = 0.2 # State noise
 gamma_obs = 0.1  # Observation noise
 
-estimated_state = Particle_filter(mean, cov, observations, gamma_state, gamma_obs)
+estimated_state = Particle_filter(mean, cov, observations, gamma_state, gamma_obs,N*10)
 print("Estimated state:", estimated_state)
