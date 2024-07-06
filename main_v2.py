@@ -291,6 +291,46 @@ def ukf(mean, cov, observations, process_model, observation_model, process_noise
         # filtered_covs[i] = cov_pred
     
     return filtered_means, filtered_covs
+def Particle_filter(mean, cov, observations, gamma_state, gamma_obs, M=10):
+    """
+    Particle filter implementation for state estimation.
+    
+    Args:
+        mean (ndarray): Mean of the initial state (N-dimensional).
+        cov (ndarray): Covariance matrix of the initial state.
+        observations (ndarray): Observed data.
+        gamma_state (float): Standard deviation of the state noise.
+        gamma_obs (float): Standard deviation of the observation noise.
+        M (int): Number of particles.
+    
+    Returns:
+        estimated_state (ndarray): Estimated state.
+    """
+    # Initialize particles randomly on N-dimensional unit sphere
+    particles = np.random.multivariate_normal(mean, cov, M)
+    weights = np.ones(M) / M  # Uniform weights initially
+    
+    for obs in observations:
+        # Prediction step: propagate particles using process model
+        for i in range(M):
+            particles[i] = process_model(particles[i], gamma_state)
+        
+        # Weight update step: compute likelihood for each particle
+        likelihoods = np.exp(-0.5 * np.sum((particles - obs)**2 / gamma_obs**2, axis=1))
+        weights *= likelihoods
+        weights /= np.sum(weights)  # Normalize weights
+        
+        # Resampling step: select particles based on weights
+        #TODO, do I need resample?
+        # particles, _ = simple_resample(particles, weights)
+    
+    # Estimate the state using weighted average of particles
+    # estimated_state = np.average(particles, weights=weights, axis=0)
+    # Compute the mean on the spherical manifold using the log and exp maps
+    tangent_vectors = np.array([Log(mean, pt) for pt in particles])
+    weighted_tangent_mean = np.sum(weights[:, np.newaxis] * tangent_vectors, axis=0)
+    estimated_state = Exp(mean, weighted_tangent_mean)
+    return estimated_state
 
 def tangent_noise(state, gamma_state):
     """
@@ -387,7 +427,11 @@ def plot_synthetic_data(true_states, observations):
 
 def evaluate_ukf(dimensions, num_points=1, kappa=3):
     errors = []
+    errors_P2 = []
+    errors_P10 = []
     times = []
+    times_P2 =[]
+    times_P10=[]
     
     for dim in dimensions:
         # gamma_state = 0.5 / np.sqrt(dim) 
@@ -416,30 +460,72 @@ def evaluate_ukf(dimensions, num_points=1, kappa=3):
         start_time = time.time()
         filtered_means, filtered_covs = ukf(mean, cov, observations, process_model, observation_model, process_noise_cov, obs_noise_cov, kappa, gamma_state, gamma_obs)
         end_time = time.time()
+        times.append(end_time - start_time)
+        start_time = time.time()
+        partical_2M  = Particle_filter(mean,cov,observations,gamma_state,gamma_obs,2*dim+1)
+        end_time = time.time()
+        times_P2.append(end_time - start_time)
+
+        start_time = time.time()
+        partical_10M  = Particle_filter(mean,cov,observations,gamma_state,gamma_obs,10*dim)
+        end_time = time.time()
+        times_P10.append(end_time - start_time)
+
+
         
         mse = np.mean(np.linalg.norm(filtered_means - true_states, axis=1)**2)
         
         errors.append(mse)
-        times.append(end_time - start_time)
-    
-    return np.array(errors), np.array(times)
+        mse_P2 = np.mean(np.linalg.norm(partical_2M - true_states, axis=1)**2)
+        
+        errors_P2.append(mse_P2)
+        mse_P10 = np.mean(np.linalg.norm(partical_10M - true_states, axis=1)**2)
+        
+        errors_P10.append(mse_P10)
 
-def plot_ukf_results(dimensions, errors, times):
+    
+    return np.array(errors), np.array(errors_P2),np.array(errors_P10),np.array(times),np.array(times_P2),np.array(times_P10)
+
+# def plot_ukf_results(dimensions, errors, times):
+#     fig, axs = plt.subplots(1, 2, figsize=(12, 6))
+
+#     # Error plot
+#     axs[0].plot(dimensions, errors, color='red', label='Riemannian UKF')
+#     axs[0].set_xlabel('State Space Dimensionality')
+#     axs[0].set_ylabel('Error')
+#     axs[0].set_title('(a)')
+#     axs[0].legend()
+
+#     # Time plot
+#     axs[1].plot(dimensions, times, color='red', label='Riemannian UKF')
+#     axs[1].set_xlabel('State Space Dimensionality')
+#     axs[1].set_ylabel('Running Time (sec)')
+#     axs[1].set_yscale('log')
+#     axs[1].set_title('(b)')
+#     axs[1].legend()
+
+#     plt.tight_layout()
+#     plt.show()
+def plot_ukf_results(dimensions, errors, errors_P2, errors_P10, times, time_P2, time_P10):
     fig, axs = plt.subplots(1, 2, figsize=(12, 6))
 
     # Error plot
     axs[0].plot(dimensions, errors, color='red', label='Riemannian UKF')
+    axs[0].plot(dimensions, errors_P2, color='blue', label='Particle 2')
+    axs[0].plot(dimensions, errors_P10, color='green', label='Particle 10')
     axs[0].set_xlabel('State Space Dimensionality')
     axs[0].set_ylabel('Error')
-    axs[0].set_title('(a)')
+    axs[0].set_title('Error vs. Dimensionality')
     axs[0].legend()
 
     # Time plot
     axs[1].plot(dimensions, times, color='red', label='Riemannian UKF')
+    axs[1].plot(dimensions, time_P2, color='blue', label='Particle 2')
+    axs[1].plot(dimensions, time_P10, color='green', label='Particle 10')
     axs[1].set_xlabel('State Space Dimensionality')
     axs[1].set_ylabel('Running Time (sec)')
     axs[1].set_yscale('log')
-    axs[1].set_title('(b)')
+    axs[1].set_title('Running Time vs. Dimensionality')
     axs[1].legend()
 
     plt.tight_layout()
@@ -449,7 +535,7 @@ def plot_ukf_results(dimensions, errors, times):
 dimensions = np.arange(10, 220, 50)
 
 # Evaluate UKF for different dimensions
-errors, times = evaluate_ukf(dimensions)
+errors,errors_P2,errors_P10, times,time_P2,times_P10 = evaluate_ukf(dimensions)
 
 # Plot results
-plot_ukf_results(dimensions, errors, times)
+plot_ukf_results(dimensions, errors,errors_P2,errors_P10, times,time_P2,times_P10 )
