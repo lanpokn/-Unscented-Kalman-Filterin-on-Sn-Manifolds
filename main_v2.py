@@ -114,7 +114,8 @@ def sigma_points(mean, cov, kappa):
     sigma_pts = np.zeros((2 * n + 1, n))
     sigma_pts[0] = mean
     # Eq.(12): sigma points calculation using Cholesky decomposition
-    U = np.linalg.cholesky((n + kappa) * cov)
+    # to avoid numerical error, we add a small I here
+    U = np.linalg.cholesky((n + kappa) * (cov+np.eye(n)*0.001))
     for i in range(n):
         sigma_pts[i + 1] = mean + U[i]
         sigma_pts[n + i + 1] = mean - U[i]
@@ -139,7 +140,7 @@ def unscented_transform_M(sigma_pts_L,sigma_pts_R,weights_mean, weights_cov):
     cov = np.zeros((sigma_pts_L.shape[1], sigma_pts_L.shape[1]))
     for m in range(len(sigma_pts_L)):
         log_map = Log(mean, sigma_pts_L[m])
-        cov += weights_cov[m] * np.outer(log_map, log_map)
+        cov += weights_cov[m] * np.outer(log_map-mean, log_map-mean)
 
     return mean, cov
     # #only used for debug:
@@ -293,20 +294,20 @@ def ukf(mean, cov, observations, process_model, observation_model, process_noise
         #based on x_t-1 to predict xt, no observation here
         mean_pred, cov_pred = ukf_predict(mean, cov, process_model, process_noise_cov, kappa, gamma_state)
         # Pxy,Pyy,yt_hat = ukf_CovCompute(mean,cov,kappa,gamma_obs,gamma_state)
-        # Pxy,Pyy,yt_hat = ukf_CovCompute(mean_pred,cov_pred,kappa,gamma_obs,gamma_state)
+        Pxy,Pyy,yt_hat = ukf_CovCompute(mean_pred,cov_pred,kappa,gamma_obs,gamma_state)
 
         # # #add an observation here and get new x 
-        # mean, cov = ukf_update(mean_pred, cov_pred, observations[i], yt_hat, Pxy,Pyy)
+        mean, cov = ukf_update(mean_pred, cov_pred, observations[i], yt_hat, Pxy,Pyy)
 
 
-        # filtered_means[i] = mean
-        # filtered_covs[i] = cov
+        filtered_means[i] = mean
+        filtered_covs[i] = cov
         # filtered_means[i] = mean_pred
         # filtered_covs[i] = cov_pred
         # filtered_means[i] = yt_hat
         # filtered_covs[i] = cov_pred
-        filtered_means[i] = process_model(mean,gamma_state)
-        filtered_covs[i] = cov_pred
+        # filtered_means[i] = process_model(mean,gamma_state)
+        # filtered_covs[i] = cov_pred
         # filtered_means[i] = observations[i]
         # filtered_covs[i] = cov_pred
     
@@ -411,7 +412,9 @@ def evaluate_ukf(dimensions, num_points=1, kappa=3):
     for dim in dimensions:
         # gamma_state = 0.5 / np.sqrt(dim) 
         # gamma_obs = 0.1
-        gamma_state = 0.2
+        # gamma_state = 0.2
+        # gamma_obs = 0.1
+        gamma_state = 0
         gamma_obs = 0.1
         process_noise_cov = (gamma_state**2) * np.eye(dim)
         obs_noise_cov = (gamma_obs**2) * np.eye(dim)
@@ -421,8 +424,10 @@ def evaluate_ukf(dimensions, num_points=1, kappa=3):
         # Initial state for UKF
         mean = true_states[0]
 
-        cov = np.eye(dim) * 0.0000001
-        cov[0, 0] = 0.0000000000000000000001
+        # cov = np.eye(dim) * 0.0000001
+        cov = np.eye(dim) * 0.001
+        cov[0,0] = 0
+
 
         start_time = time.time()
         filtered_means, filtered_covs = ukf(mean, cov, observations, process_model, observation_model, process_noise_cov, obs_noise_cov, kappa, gamma_state, gamma_obs)
