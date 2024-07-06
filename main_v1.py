@@ -404,8 +404,10 @@ def evaluate_ukf(dimensions, num_points=1, kappa=3):
     for dim in dimensions:
         # gamma_state = 0.5 / np.sqrt(dim) 
         # gamma_obs = 0.1
-        gamma_state = 0.2
-        gamma_obs = 0.1
+        # gamma_state = 0.2
+        # gamma_obs = 0.1
+        gamma_state = 0
+        gamma_obs = 0
         process_noise_cov = (gamma_state**2 / dim) * np.eye(dim)
         obs_noise_cov = (gamma_obs**2) * np.eye(dim)
         
@@ -450,7 +452,7 @@ def plot_ukf_results(dimensions, errors, times):
     plt.show()
 
 # Define the range of dimensions to test
-dimensions = np.arange(2, 202, 10)
+dimensions = np.arange(2, 202, 50)
 
 # Evaluate UKF for different dimensions
 errors, times = evaluate_ukf(dimensions)

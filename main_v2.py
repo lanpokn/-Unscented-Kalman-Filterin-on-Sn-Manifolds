@@ -247,7 +247,7 @@ def ukf_CovCompute(mean,cov,kappa,gamma_obs,gamma_state):
         # sigma_pts_obs[i] = observation_model(sigma_pts[i], gamma_obs)
         sigma_pts_obs_M[i] = observation_model(sigma_pts_M[i], gamma_obs)
     _, Pyy = unscented_transform(sigma_pts_obs_M,sigma_pts_obs_M,weights_mean, weights_cov)
-    _, Pxy = unscented_transform_xy(sigma_pts,sigma_pts_obs_M,weights_mean, weights_cov)
+    _, Pxy = unscented_transform_xy(sigma_pts-mean,sigma_pts_obs_M,weights_mean, weights_cov)
     yt_hat = np.sum(sigma_pts_obs_M*weights_mean[:, np.newaxis], axis=0)
 
     return Pxy, Pyy,yt_hat
@@ -295,13 +295,16 @@ def ukf(mean, cov, observations, process_model, observation_model, process_noise
     for i in range(num_obs):
         #based on x_t-1 to predict xt, no observation here
         mean_pred, cov_pred = ukf_predict(mean, cov, process_model, process_noise_cov, kappa, gamma_state)
-        # Pxy,Pyy,yt_hat = ukf_CovCompute(mean,cov,kappa,gamma_obs,gamma_state)
-        Pxy,Pyy,yt_hat = ukf_CovCompute(mean_pred,cov_pred,kappa,gamma_obs,gamma_state)
+        Pxy,Pyy,yt_hat = ukf_CovCompute(mean,cov,kappa,gamma_obs,gamma_state)
+        # Pxy,Pyy,yt_hat = ukf_CovCompute(mean_pred,cov_pred,kappa,gamma_obs,gamma_state)
 
         # # #add an observation here and get new x 
+        # when static, before is right,ukf_update is wrong
         mean, cov = ukf_update(mean_pred, cov_pred, observations[i], yt_hat, Pxy,Pyy)
 
-
+        # to avoid numerical error
+        if np.all(np.linalg.eigvals(cov) > 0) == False:
+            cov = np.eye(n)*0.000000001
         filtered_means[i] = mean
         filtered_covs[i] = cov
         # filtered_means[i] = mean_pred
@@ -414,10 +417,10 @@ def evaluate_ukf(dimensions, num_points=1, kappa=3):
     for dim in dimensions:
         # gamma_state = 0.5 / np.sqrt(dim) 
         # gamma_obs = 0.1
-        # gamma_state = 0.2
-        # gamma_obs = 0.1
-        gamma_state = 0
+        gamma_state = 0.2/np.sqrt(dim) 
         gamma_obs = 0.1
+        # gamma_state = 0
+        # gamma_obs = 0
         process_noise_cov = (gamma_state**2) * np.eye(dim)
         obs_noise_cov = (gamma_obs**2) * np.eye(dim)
         
@@ -465,7 +468,7 @@ def plot_ukf_results(dimensions, errors, times):
     plt.show()
 
 # Define the range of dimensions to test
-dimensions = np.arange(3, 210, 25)
+dimensions = np.arange(10, 210, 20)
 
 # Evaluate UKF for different dimensions
 errors, times = evaluate_ukf(dimensions)
