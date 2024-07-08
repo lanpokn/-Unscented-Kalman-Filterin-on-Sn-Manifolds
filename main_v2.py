@@ -158,6 +158,7 @@ def ukf_predict(mean, cov, process_model, process_noise_cov, kappa, gamma_state)
     sigma_pts_pro_M = np.zeros_like(sigma_pts)
     for i in range(sigma_pts.shape[0]):
         sigma_pts_pro_M[i] = process_model(sigma_pts_M[i], gamma_state)
+
     
     # Eq.(15): calculate weights for mean
     weights_mean = np.full(2 * n + 1, 1 / (2 * (n + kappa)))
@@ -219,7 +220,10 @@ def ukf_CovCompute(mean,cov,kappa,gamma_obs,gamma_state):
     for i in range(sigma_pts.shape[0]):
         # Propagate each sigma point through the observation model
         # sigma_pts_obs[i] = observation_model(sigma_pts[i], gamma_obs)
-        sigma_pts_obs_M[i] = observation_model(sigma_pts_M[i], gamma_obs)
+        # sigma_pts_obs_M[i] = observation_model(sigma_pts_M[i], gamma_obs)
+        # TODO, you can try to change it to other function like 2x, and test its correctness
+        sigma_pts_obs_M[i] = 2*sigma_pts_M[i]
+    _, Pyy_ori = unscented_transform(sigma_pts_M,sigma_pts_M,weights_mean, weights_cov)
     _, Pyy = unscented_transform(sigma_pts_obs_M,sigma_pts_obs_M,weights_mean, weights_cov)
     _, Pxy = unscented_transform_xy(sigma_pts-mean,sigma_pts_obs_M,weights_mean, weights_cov)
     yt_hat = np.sum(sigma_pts_obs_M*weights_mean[:, np.newaxis], axis=0)
@@ -269,8 +273,8 @@ def ukf(mean, cov, observations, process_model, observation_model, process_noise
     for i in range(num_obs):
         #based on x_t-1 to predict xt, no observation here
         mean_pred, cov_pred = ukf_predict(mean, cov, process_model, process_noise_cov, kappa, gamma_state)
-        Pxy,Pyy,yt_hat = ukf_CovCompute(mean,cov,kappa,gamma_obs,gamma_state)
-        # Pxy,Pyy,yt_hat = ukf_CovCompute(mean_pred,cov_pred,kappa,gamma_obs,gamma_state)
+        # Pxy,Pyy,yt_hat = ukf_CovCompute(mean,cov,kappa,gamma_obs,gamma_state)
+        Pxy,Pyy,yt_hat = ukf_CovCompute(mean_pred,cov_pred,kappa,gamma_obs,gamma_state)
 
         # # #add an observation here and get new x 
         # when static, before is right,ukf_update is wrong
@@ -308,6 +312,22 @@ def Particle_filter(mean, cov, observations, gamma_state, gamma_obs, M=10):
     """
     # Initialize particles randomly on N-dimensional unit sphere
     particles = np.random.multivariate_normal(mean, cov, M)
+    N = len(mean)
+
+    sphere_points = np.random.randn(M // 2, N)
+    sphere_points /= np.linalg.norm(sphere_points, axis=1)[:, np.newaxis]
+    if M%2 == 1:
+        normal_points = np.random.multivariate_normal(mean, cov, M // 2+1)
+    else:
+        normal_points = np.random.multivariate_normal(mean, cov, M // 2)
+    particles = np.vstack((sphere_points, normal_points))
+    # particles = np.random.randn(M, N)
+    # particles /= np.linalg.norm(particles, axis=1)[:, np.newaxis]
+
+
+
+
+
     weights = np.ones(M) / M  # Uniform weights initially
     
     for obs in observations:
@@ -434,15 +454,10 @@ def evaluate_ukf(dimensions, num_points=1, kappa=3):
     times_P10=[]
     
     for dim in dimensions:
-        # gamma_state = 0.5 / np.sqrt(dim) 
         # gamma_obs = 0.1
-        # gamma_state = 0.2
+        # gamma_state = 0.5/np.sqrt(dim) 
         gamma_obs = 0.1
-        gamma_state = 0.5/np.sqrt(dim) 
-        # gamma_state = 0.05
-        # gamma_obs = 0.1
-        # gamma_state = 0
-        # gamma_obs = 0
+        gamma_state = 0
         process_noise_cov = (gamma_state**2) * np.eye(dim)
         obs_noise_cov = (gamma_obs**2) * np.eye(dim)
         
@@ -451,10 +466,10 @@ def evaluate_ukf(dimensions, num_points=1, kappa=3):
         # Initial state for UKF
         mean = true_states[0]
 
-        # cov = np.eye(dim) * 0.0000001
         cov = np.eye(dim) * 0.001
         cov[0,0] = 0
         cov[1,1] = 0.01
+        cov = cov*1
 
 
         start_time = time.time()
@@ -486,26 +501,54 @@ def evaluate_ukf(dimensions, num_points=1, kappa=3):
     
     return np.array(errors), np.array(errors_P2),np.array(errors_P10),np.array(times),np.array(times_P2),np.array(times_P10)
 
-# def plot_ukf_results(dimensions, errors, times):
-#     fig, axs = plt.subplots(1, 2, figsize=(12, 6))
+def evaluate_ukf_gamma(gamma_states, num_points=1, kappa=3, dim=30):
+    errors = []
+    errors_P2 = []
+    errors_P10 = []
+    times = []
+    times_P2 = []
+    times_P10 = []
 
-#     # Error plot
-#     axs[0].plot(dimensions, errors, color='red', label='Riemannian UKF')
-#     axs[0].set_xlabel('State Space Dimensionality')
-#     axs[0].set_ylabel('Error')
-#     axs[0].set_title('(a)')
-#     axs[0].legend()
+    for gamma_state in gamma_states:
+        gamma_obs = 0.1
+        process_noise_cov = (gamma_state**2) * np.eye(dim)
+        obs_noise_cov = (gamma_obs**2) * np.eye(dim)
 
-#     # Time plot
-#     axs[1].plot(dimensions, times, color='red', label='Riemannian UKF')
-#     axs[1].set_xlabel('State Space Dimensionality')
-#     axs[1].set_ylabel('Running Time (sec)')
-#     axs[1].set_yscale('log')
-#     axs[1].set_title('(b)')
-#     axs[1].legend()
+        true_states, observations = generate_synthetic_data(num_points, gamma_state, gamma_obs, dim)
 
-#     plt.tight_layout()
-#     plt.show()
+        # Initial state for UKF
+        mean = true_states[0]
+
+        cov = np.eye(dim) * 0.001
+        cov[0, 0] = 0
+        cov[1, 1] = 0.01
+
+        start_time = time.time()
+        filtered_means, filtered_covs = ukf(mean, cov, observations, process_model, observation_model, process_noise_cov, obs_noise_cov, kappa, gamma_state, gamma_obs)
+        end_time = time.time()
+        times.append(end_time - start_time)
+
+        start_time = time.time()
+        particle_2M = Particle_filter(mean, cov, observations, gamma_state, gamma_obs, 2 * dim + 1)
+        end_time = time.time()
+        times_P2.append(end_time - start_time)
+
+        start_time = time.time()
+        particle_10M = Particle_filter(mean, cov, observations, gamma_state, gamma_obs, 10 * dim)
+        end_time = time.time()
+        times_P10.append(end_time - start_time)
+
+        mse = np.mean(np.linalg.norm(filtered_means - true_states, axis=1)**2)
+        errors.append(mse)
+
+        mse_P2 = np.mean(np.linalg.norm(particle_2M - true_states, axis=1)**2)
+        errors_P2.append(mse_P2)
+
+        mse_P10 = np.mean(np.linalg.norm(particle_10M - true_states, axis=1)**2)
+        errors_P10.append(mse_P10)
+
+    return np.array(errors), np.array(errors_P2), np.array(errors_P10), np.array(times), np.array(times_P2), np.array(times_P10)
+
 def plot_ukf_results(dimensions, errors, errors_P2, errors_P10, times, time_P2, time_P10):
     fig, axs = plt.subplots(1, 2, figsize=(12, 6))
 
@@ -513,7 +556,7 @@ def plot_ukf_results(dimensions, errors, errors_P2, errors_P10, times, time_P2, 
     axs[0].plot(dimensions, errors, color='red', label='Riemannian UKF')
     axs[0].plot(dimensions, errors_P2, color='blue', label='Particle 2')
     axs[0].plot(dimensions, errors_P10, color='green', label='Particle 10')
-    axs[0].set_xlabel('State Space Dimensionality')
+    axs[0].set_xlabel('Dimension or Noise')
     axs[0].set_ylabel('Error')
     axs[0].set_title('Error vs. Dimensionality')
     axs[0].legend()
@@ -532,10 +575,16 @@ def plot_ukf_results(dimensions, errors, errors_P2, errors_P10, times, time_P2, 
     plt.show()
 
 # Define the range of dimensions to test
-dimensions = np.arange(10, 220, 50)
+# dimensions = np.arange(10, 220, 40)
+dimensions = np.arange(10, 170, 20)
+
 
 # Evaluate UKF for different dimensions
 errors,errors_P2,errors_P10, times,time_P2,times_P10 = evaluate_ukf(dimensions)
 
 # Plot results
 plot_ukf_results(dimensions, errors,errors_P2,errors_P10, times,time_P2,times_P10 )
+
+# gamma_states = np.linspace(0.001 / np.sqrt(30), 0.9 / np.sqrt(30), 5)
+# errors,errors_P2,errors_P10, times,time_P2,times_P10  = evaluate_ukf_gamma(gamma_states)
+# plot_ukf_results(gamma_states, errors,errors_P2,errors_P10, times,time_P2,times_P10 )
