@@ -220,10 +220,12 @@ def ukf_CovCompute(mean,cov,kappa,gamma_obs,gamma_state):
     for i in range(sigma_pts.shape[0]):
         # Propagate each sigma point through the observation model
         # sigma_pts_obs[i] = observation_model(sigma_pts[i], gamma_obs)
-        # sigma_pts_obs_M[i] = observation_model(sigma_pts_M[i], gamma_obs)
+        sigma_pts_obs_M[i] = observation_model(sigma_pts_M[i], gamma_obs)
         # TODO, you can try to change it to other function like 2x, and test its correctness
-        sigma_pts_obs_M[i] = 2*sigma_pts_M[i]
-    _, Pyy_ori = unscented_transform(sigma_pts_M,sigma_pts_M,weights_mean, weights_cov)
+        # seems that it is not wrong...
+        # sigma_pts_obs_M[i] = 2*sigma_pts_M[i]
+    _, Pyy_ori = unscented_transform(sigma_pts,sigma_pts_M,weights_mean, weights_cov)
+    _, Pyy_ori_M = unscented_transform(sigma_pts_M,sigma_pts_M,weights_mean, weights_cov)
     _, Pyy = unscented_transform(sigma_pts_obs_M,sigma_pts_obs_M,weights_mean, weights_cov)
     _, Pxy = unscented_transform_xy(sigma_pts-mean,sigma_pts_obs_M,weights_mean, weights_cov)
     yt_hat = np.sum(sigma_pts_obs_M*weights_mean[:, np.newaxis], axis=0)
@@ -252,7 +254,9 @@ def ukf_update(mean_pred, cov_pred, observation, yt_hat, Pxy,Pyy):
 
     #yt is in Rn, should not use log
     # mean_upd_tangent = mean_pred+kalman_gain@Log(yt_hat,observation)
-    mean_upd_tangent = mean_pred+kalman_gain@(yt_hat-observation)
+    # mean_upd_tangent = mean_pred+kalman_gain@(yt_hat-observation)
+    mean_upd_tangent = mean_pred+kalman_gain@(observation-yt_hat)
+
     # Update covariance using the Kalman gain
     #TODO below Pyy,Pxy,cov_pred is positive, but cov_upd is not
     #mean_upd is on sphere, so it's not totally wrong
@@ -445,63 +449,74 @@ def plot_synthetic_data(true_states, observations):
     plt.show()
 
 
-def evaluate_ukf(dimensions, num_points=1, kappa=3):
+def evaluate_ukf(dimensions, num_points=1, kappa=3, num_runs=10):
     errors = []
     errors_P2 = []
     errors_P10 = []
     times = []
-    times_P2 =[]
-    times_P10=[]
-    
+    times_P2 = []
+    times_P10 = []
+
     for dim in dimensions:
-        # gamma_obs = 0.1
-        # gamma_state = 0.5/np.sqrt(dim) 
-        gamma_obs = 0.1
-        gamma_state = 0
-        process_noise_cov = (gamma_state**2) * np.eye(dim)
-        obs_noise_cov = (gamma_obs**2) * np.eye(dim)
-        
-        true_states, observations = generate_synthetic_data(num_points, gamma_state, gamma_obs, dim)
-        
-        # Initial state for UKF
-        mean = true_states[0]
+        run_errors = []
+        run_errors_P2 = []
+        run_errors_P10 = []
+        run_times = []
+        run_times_P2 = []
+        run_times_P10 = []
 
-        cov = np.eye(dim) * 0.001
-        cov[0,0] = 0
-        cov[1,1] = 0.01
-        cov = cov*1
+        for _ in range(num_runs):
+            gamma_obs = 0.1
+            gamma_state = 0.2
+            process_noise_cov = (gamma_state ** 2) * np.eye(dim)
+            obs_noise_cov = (gamma_obs ** 2) * np.eye(dim)
 
+            true_states, observations = generate_synthetic_data(num_points, gamma_state, gamma_obs, dim)
 
-        start_time = time.time()
-        filtered_means, filtered_covs = ukf(mean, cov, observations, process_model, observation_model, process_noise_cov, obs_noise_cov, kappa, gamma_state, gamma_obs)
-        end_time = time.time()
-        times.append(end_time - start_time)
-        start_time = time.time()
-        partical_2M  = Particle_filter(mean,cov,observations,gamma_state,gamma_obs,2*dim+1)
-        end_time = time.time()
-        times_P2.append(end_time - start_time)
+            # Initial state for UKF
+            mean = true_states[0]
+            cov = np.eye(dim) * 0.001
+            cov[0, 0] = 0
+            cov[1, 1] = 0.01
+            cov = cov
 
-        start_time = time.time()
-        partical_10M  = Particle_filter(mean,cov,observations,gamma_state,gamma_obs,10*dim)
-        end_time = time.time()
-        times_P10.append(end_time - start_time)
+            # UKF
+            start_time = time.time()
+            filtered_means, filtered_covs = ukf(mean, cov, observations, process_model, observation_model, process_noise_cov, obs_noise_cov, kappa, gamma_state, gamma_obs)
+            end_time = time.time()
+            run_times.append(end_time - start_time)
 
+            # Particle Filter with 2M particles
+            start_time = time.time()
+            particle_2M = Particle_filter(mean, cov, observations, gamma_state, gamma_obs, 2 * dim + 1)
+            end_time = time.time()
+            run_times_P2.append(end_time - start_time)
 
-        
-        mse = np.mean(np.linalg.norm(filtered_means - true_states, axis=1)**2)
-        
-        errors.append(mse)
-        mse_P2 = np.mean(np.linalg.norm(partical_2M - true_states, axis=1)**2)
-        
-        errors_P2.append(mse_P2)
-        mse_P10 = np.mean(np.linalg.norm(partical_10M - true_states, axis=1)**2)
-        
-        errors_P10.append(mse_P10)
+            # Particle Filter with 10M particles
+            start_time = time.time()
+            particle_10M = Particle_filter(mean, cov, observations, gamma_state, gamma_obs, 10 * dim)
+            end_time = time.time()
+            run_times_P10.append(end_time - start_time)
 
-    
-    return np.array(errors), np.array(errors_P2),np.array(errors_P10),np.array(times),np.array(times_P2),np.array(times_P10)
+            # Calculate Mean Squared Errors
+            mse = np.mean(np.linalg.norm(filtered_means - true_states, axis=1) ** 2)
+            mse_P2 = np.mean(np.linalg.norm(particle_2M - true_states, axis=1) ** 2)
+            mse_P10 = np.mean(np.linalg.norm(particle_10M - true_states, axis=1) ** 2)
 
-def evaluate_ukf_gamma(gamma_states, num_points=1, kappa=3, dim=30):
+            run_errors.append(mse)
+            run_errors_P2.append(mse_P2)
+            run_errors_P10.append(mse_P10)
+
+        errors.append(np.mean(run_errors))
+        errors_P2.append(np.mean(run_errors_P2))
+        errors_P10.append(np.mean(run_errors_P10))
+        times.append(np.mean(run_times))
+        times_P2.append(np.mean(run_times_P2))
+        times_P10.append(np.mean(run_times_P10))
+
+    return errors, errors_P2, errors_P10, times, times_P2, times_P10
+
+def evaluate_ukf_gamma(gamma_states, num_points=1, kappa=3, dim=30, num_runs=10):
     errors = []
     errors_P2 = []
     errors_P10 = []
@@ -510,42 +525,59 @@ def evaluate_ukf_gamma(gamma_states, num_points=1, kappa=3, dim=30):
     times_P10 = []
 
     for gamma_state in gamma_states:
-        gamma_obs = 0.1
-        process_noise_cov = (gamma_state**2) * np.eye(dim)
-        obs_noise_cov = (gamma_obs**2) * np.eye(dim)
+        run_errors = []
+        run_errors_P2 = []
+        run_errors_P10 = []
+        run_times = []
+        run_times_P2 = []
+        run_times_P10 = []
 
-        true_states, observations = generate_synthetic_data(num_points, gamma_state, gamma_obs, dim)
+        for _ in range(num_runs):
+            gamma_obs = 0.1
+            process_noise_cov = (gamma_state ** 2) * np.eye(dim)
+            obs_noise_cov = (gamma_obs ** 2) * np.eye(dim)
 
-        # Initial state for UKF
-        mean = true_states[0]
+            true_states, observations = generate_synthetic_data(num_points, gamma_state, gamma_obs, dim)
 
-        cov = np.eye(dim) * 0.001
-        cov[0, 0] = 0
-        cov[1, 1] = 0.01
+            # Initial state for UKF
+            mean = true_states[0]
+            cov = np.eye(dim) * 0.001
+            cov[0, 0] = 0
+            cov[1, 1] = 0.01
 
-        start_time = time.time()
-        filtered_means, filtered_covs = ukf(mean, cov, observations, process_model, observation_model, process_noise_cov, obs_noise_cov, kappa, gamma_state, gamma_obs)
-        end_time = time.time()
-        times.append(end_time - start_time)
+            # UKF
+            start_time = time.time()
+            filtered_means, filtered_covs = ukf(mean, cov, observations, process_model, observation_model, process_noise_cov, obs_noise_cov, kappa, gamma_state, gamma_obs)
+            end_time = time.time()
+            run_times.append(end_time - start_time)
 
-        start_time = time.time()
-        particle_2M = Particle_filter(mean, cov, observations, gamma_state, gamma_obs, 2 * dim + 1)
-        end_time = time.time()
-        times_P2.append(end_time - start_time)
+            # Particle Filter with 2M particles
+            start_time = time.time()
+            particle_2M = Particle_filter(mean, cov, observations, gamma_state, gamma_obs, 2 * dim + 1)
+            end_time = time.time()
+            run_times_P2.append(end_time - start_time)
 
-        start_time = time.time()
-        particle_10M = Particle_filter(mean, cov, observations, gamma_state, gamma_obs, 10 * dim)
-        end_time = time.time()
-        times_P10.append(end_time - start_time)
+            # Particle Filter with 10M particles
+            start_time = time.time()
+            particle_10M = Particle_filter(mean, cov, observations, gamma_state, gamma_obs, 10 * dim)
+            end_time = time.time()
+            run_times_P10.append(end_time - start_time)
 
-        mse = np.mean(np.linalg.norm(filtered_means - true_states, axis=1)**2)
-        errors.append(mse)
+            # Calculate Mean Squared Errors
+            mse = np.mean(np.linalg.norm(filtered_means - true_states, axis=1) ** 2)
+            mse_P2 = np.mean(np.linalg.norm(particle_2M - true_states, axis=1) ** 2)
+            mse_P10 = np.mean(np.linalg.norm(particle_10M - true_states, axis=1) ** 2)
 
-        mse_P2 = np.mean(np.linalg.norm(particle_2M - true_states, axis=1)**2)
-        errors_P2.append(mse_P2)
+            run_errors.append(mse)
+            run_errors_P2.append(mse_P2)
+            run_errors_P10.append(mse_P10)
 
-        mse_P10 = np.mean(np.linalg.norm(particle_10M - true_states, axis=1)**2)
-        errors_P10.append(mse_P10)
+        errors.append(np.mean(run_errors))
+        errors_P2.append(np.mean(run_errors_P2))
+        errors_P10.append(np.mean(run_errors_P10))
+        times.append(np.mean(run_times))
+        times_P2.append(np.mean(run_times_P2))
+        times_P10.append(np.mean(run_times_P10))
 
     return np.array(errors), np.array(errors_P2), np.array(errors_P10), np.array(times), np.array(times_P2), np.array(times_P10)
 
@@ -575,8 +607,8 @@ def plot_ukf_results(dimensions, errors, errors_P2, errors_P10, times, time_P2, 
     plt.show()
 
 # Define the range of dimensions to test
-# dimensions = np.arange(10, 220, 40)
-dimensions = np.arange(10, 170, 20)
+dimensions = np.arange(10, 220, 40)
+# dimensions = np.arange(10, 100, 20)
 
 
 # Evaluate UKF for different dimensions
@@ -585,6 +617,6 @@ errors,errors_P2,errors_P10, times,time_P2,times_P10 = evaluate_ukf(dimensions)
 # Plot results
 plot_ukf_results(dimensions, errors,errors_P2,errors_P10, times,time_P2,times_P10 )
 
-# gamma_states = np.linspace(0.001 / np.sqrt(30), 0.9 / np.sqrt(30), 5)
-# errors,errors_P2,errors_P10, times,time_P2,times_P10  = evaluate_ukf_gamma(gamma_states)
-# plot_ukf_results(gamma_states, errors,errors_P2,errors_P10, times,time_P2,times_P10 )
+gamma_states = np.linspace(0.001 / np.sqrt(30), 1.1 / np.sqrt(30), 5)
+errors,errors_P2,errors_P10, times,time_P2,times_P10  = evaluate_ukf_gamma(gamma_states)
+plot_ukf_results(gamma_states, errors,errors_P2,errors_P10, times,time_P2,times_P10 )
