@@ -449,7 +449,7 @@ def plot_synthetic_data(true_states, observations):
     plt.show()
 
 
-def evaluate_ukf(dimensions, num_points=1, kappa=3, num_runs=10):
+def evaluate_ukf(dimensions, num_points=1, kappa=3, num_runs=3):
     errors = []
     errors_P2 = []
     errors_P10 = []
@@ -478,7 +478,7 @@ def evaluate_ukf(dimensions, num_points=1, kappa=3, num_runs=10):
             cov = np.eye(dim) * 0.001
             cov[0, 0] = 0
             cov[1, 1] = 0.01
-            cov = cov
+            cov = cov*10000
 
             # UKF
             start_time = time.time()
@@ -608,6 +608,9 @@ def plot_ukf_results(dimensions, errors, errors_P2, errors_P10, times, time_P2, 
 
 # Define the range of dimensions to test
 dimensions = np.arange(10, 220, 40)
+#save time
+dimensions = np.delete(dimensions, -2)
+dimensions = np.delete(dimensions, -2)
 # dimensions = np.arange(10, 100, 20)
 
 
